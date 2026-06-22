@@ -1,0 +1,6 @@
+pyyaml
+requests
+pandas 
+numpy
+matplotlib
+tqdm
