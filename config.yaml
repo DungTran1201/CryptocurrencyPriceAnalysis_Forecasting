@@ -1,6 +1,8 @@
 # config.yaml
-symbol: "BTCUSDT"
-timeframe: "1m"
-start_date: "2023-01-01 00:00:00"
-end_date: "2023-01-10 00:00:00"
-save_dir: "/workspaces/Binance-Predict-Value-And-Trend/data/raw"
+data:
+  symbol: "BTCUSDT"
+  time:
+    timeframe: "1m"
+    start_date: "2023-01-01 00:00:00"
+    end_date: "2023-01-10 00:00:00"
+  save_dir: "/data/raw"
