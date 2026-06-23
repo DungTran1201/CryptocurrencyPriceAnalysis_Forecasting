@@ -1,14 +1,26 @@
+
 import pandas as pd
 
-def resample_data(file_path, timeframe):
+from config import (
+    OperationLogger, 
+    ExceptionLogger, 
+    PerformanceLogger)
+
+op_log = OperationLogger("Data_Processor - OP")
+ex_log = ExceptionLogger("Data_Processor - EX")
+pref_log = PerformanceLogger("Data_Processor - PE")
+
+@pref_log.track
+def resample_data(dataframe: pd.DataFrame, 
+                  timeframe: str = "1min") -> pd.DataFrame: 
     """
     Xử lý resample sử dụng 'min' thay vì 'T' để tương thích với pandas mới nhất.
     """
     try:
-        df = pd.read_csv(file_path)
+        op_log.info("Dataframe resample timeframe")
         # Chuyển đổi sang datetime (nếu chưa phải)
-        df['Open_time'] = pd.to_datetime(df['Open_time'], unit='ms')
-        df.set_index('Open_time', inplace=True)
+        dataframe['Open_time'] = pd.to_datetime(dataframe ['Open_time'], unit='ms')
+        dataframe.set_index('Open_time', inplace=True)
         
         # Thay thế ký tự 'm' trong timeframe thành 'min' để pandas hiểu
         # Ví dụ: '1m' -> '1min', '5m' -> '5min'
@@ -23,8 +35,12 @@ def resample_data(file_path, timeframe):
         }
         
         # Thực hiện resample
-        resampled_df = df.resample(timeframe).agg(agg_dict).dropna()
-        
+        resampled_df = dataframe.resample(timeframe).agg(agg_dict).dropna()
+        op_log.info("Resample successfully")
         return resampled_df.reset_index()
+    
     except Exception as e:
-        raise ValueError(f"Lỗi khi xử lý: {e}")
+        ex_log(e, 'resample_data')
+
+        
+    

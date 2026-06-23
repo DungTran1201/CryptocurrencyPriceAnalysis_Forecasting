@@ -1,37 +1,78 @@
+import os
+import time
+
+from pathlib import Path
+from config import (
+    OperationLogger, 
+    ExceptionLogger, 
+    PerformanceLogger, 
+    setup)
+
+
+
+import pandas as pd
+from src.data_processor import resample_data
+
 import streamlit as st
 import plotly.graph_objects as go
-from src.data_processor import resample_data
+
 from components.header import render_header
-import os
 
-st.set_page_config(layout="wide", page_title="Binance Style Dashboard")
+op_log = OperationLogger("DashBroad - OP")
+ex_log = ExceptionLogger("DashBroad - EX")
+perf_log = PerformanceLogger("DashBroad - PE")
 
-# 1. Header
-tf = render_header()
 
-# 2. Logic chính
-data_file = "/workspaces/Binance-Predict-Value-And-Trend/data/raw/BTCUSDT_1m_data.csv"
+BASE_DIR = setup.base_dir
+FILE_NAME = f'{setup.data.symbol}_{setup.data.time.frame}_data.csv'
+DATA_PATH = str(os.path.join(BASE_DIR, "data", "raw", FILE_NAME) )
 
-if not os.path.exists(data_file):
-    st.error(f"Không tìm thấy file dữ liệu tại {data_file}")
-else:
+@perf_log.track
+def df_loader(file_path: str) -> pd.DataFrame : 
+    
+    try: 
+        op_log.info("DashBroad: Load dataframe")
+        data = pd.read_csv(DATA_PATH) 
+        return data 
+    except FileNotFoundError as e: 
+        ex_log.handle(e, "df_loader")
+        return 
+
+
+@perf_log.track
+def plot_chart(df: pd.DataFrame) -> None:
     try:
-        # Xử lý dữ liệu
-        df = resample_data(data_file, tf)
-        
-        # 3. Vẽ biểu đồ nến
+        op_log.info('Chart: PLot cadinates ')
+        resample_df = resample_data(df, tf)
+            
+            # 3. Vẽ biểu đồ nến
         st.subheader(f"Biểu đồ giá ({tf})")
         fig = go.Figure(data=[go.Candlestick(
-            x=df['Open_time'], open=df['Open'], high=df['High'],
-            low=df['Low'], close=df['Close'],
-            increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
-        )])
-        
-        fig.update_layout(template='plotly_dark', xaxis_rangeslider_visible=False, height=500)
+                x=resample_df['Open_time'], 
+                open=resample_df['Open'], 
+                high=resample_df['High'],
+                low=resample_df['Low'], 
+                close=resample_df['Close'],
+                increasing_line_color='#26a69a', 
+                decreasing_line_color='#ef5350'
+            )])
+            
+        fig.update_layout(template='plotly_dark', 
+                            xaxis_rangeslider_visible=False, 
+                            height=500)
+            
         st.plotly_chart(fig, use_container_width=True)
-        
-        # Hiển thị bảng dữ liệu
-        st.write("Dữ liệu chi tiết:", df)
-        
+        st.write("Dữ liệu chi tiết:", resample_df)
+            
     except Exception as e:
-        st.error(f"⚠️ Lỗi hệ thống: {e}")
+        ex_log.handle(e, 'plot_chart')
+
+
+if __name__ == "__main__": 
+    st.set_page_config(layout="wide", 
+                   page_title="Binance Style Dashboard")
+    # 1. Header
+    tf = render_header()
+    df = df_loader(file_path = DATA_PATH)
+    plot_chart(df = df)
+     
