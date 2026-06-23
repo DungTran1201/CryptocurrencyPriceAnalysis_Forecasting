@@ -40,7 +40,7 @@ def resample_data(dataframe: pd.DataFrame,
         return resampled_df.reset_index()
     
     except Exception as e:
-        ex_log(e, 'resample_data')
+        raise e 
 
         
     

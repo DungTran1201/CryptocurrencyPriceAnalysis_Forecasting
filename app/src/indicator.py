@@ -1,3 +1,4 @@
+
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
@@ -72,4 +73,18 @@ class BollingerBandsIndicator(BaseIndicator):
         df[f'BB_Middle_{window}'] = middle_band
         df[f'BB_Upper_{window}'] = middle_band + (std * num_std)
         df[f'BB_Lower_{window}'] = middle_band - (std * num_std)
+        return df
+
+
+class RSIIndicator(BaseIndicator):
+    """Calculates Relative Strength Index (RSI)."""
+    def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
+        window = self.params.get('window', 14)
+        delta = df['Close'].diff()
+        
+        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        
+        rs = gain / loss
+        df[f'RSI_{window}'] = 100 - (100 / (1 + rs))
         return df
