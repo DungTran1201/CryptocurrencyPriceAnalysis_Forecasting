@@ -6,6 +6,8 @@ from config import (
     ExceptionLogger, 
     PerformanceLogger)
 
+from .indicator import IndicatorFactory
+
 op_log = OperationLogger("Data_Processor - OP")
 ex_log = ExceptionLogger("Data_Processor - EX")
 pref_log = PerformanceLogger("Data_Processor - PE")
@@ -41,6 +43,24 @@ def resample_data(dataframe: pd.DataFrame,
     
     except Exception as e:
         raise e 
+    
+def apply_indicators(df: pd.DataFrame, 
+                     config: dict) -> pd.DataFrame:
+    """Hàm xử lý toàn bộ danh sách chỉ báo."""
+    for indicator_name, instances in config.items():
+        if not instances: 
+            continue
+        else:
+            for params in instances:
+                try:
+                    # 1. Khởi tạo
+                    indicator = IndicatorFactory.get_indicator(indicator_name, params)
+                    # 2. Tính toán và cập nhật DataFrame
+                    df = indicator.run(df)
+                    op_log.info(f"Computing {indicator_name} successfully!")
+                except Exception as e:
+                    ex_log.handle(f"Lỗi khi tính {indicator_name} (ID: {params.get('id')}): {e}")
+    return df
 
         
     
