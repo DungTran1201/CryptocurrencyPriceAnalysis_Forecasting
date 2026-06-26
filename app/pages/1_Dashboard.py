@@ -18,7 +18,7 @@ perf_log = PerformanceLogger("Dashboard - PE")
 
 # Define Data Path
 BASE_DIR = setup.base_dir
-FILE_NAME = f'{setup.data.symbol}_{setup.data.time.frame}_data.csv'
+FILE_NAME = f'{setup.data.symbol}_{setup.data.time.frame}_data_v2.csv'
 DATA_PATH = os.path.join(BASE_DIR, "data", "raw", FILE_NAME)
 
 df = pd.read_csv(DATA_PATH)

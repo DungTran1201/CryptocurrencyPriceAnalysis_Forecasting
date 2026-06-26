@@ -8,15 +8,11 @@ from pydantic_settings import (
 
 def load_config (config_path: str): 
     try: 
-        
         with open (config_path, "r", encoding = "utf-8") as f: 
             yaml_load = yaml.safe_load(f) 
-        
         return yaml_load
-
     except FileNotFoundError as e: 
-        
-        return None
+        raise e
 
 
 class TimeSettings(BaseModel): 
@@ -58,4 +54,4 @@ class Settings(BaseSettings):
         
         return cls(**yaml_data) 
 
-setup = Settings.load_from_yaml(filename =  "/workspaces/Binance-Predict-Value-And-Trend/config.yaml")
+setup = Settings.load_from_yaml(filename = "/workspaces/Binance-Predict-Value-And-Trend/config.yaml")
