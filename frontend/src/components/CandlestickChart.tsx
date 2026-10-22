@@ -50,7 +50,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Handle high DPI
+    // High DPI scaling
     const dpr = window.devicePixelRatio || 1;
     const rect = container.getBoundingClientRect();
     const width = rect.width;
@@ -93,7 +93,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     maxPrice += pPadding;
 
     const n = candles.length;
-    const yAxisWidth = 65;
+    const yAxisWidth = 70;
     const chartWidth = Math.max(10, width - yAxisWidth);
     const candleW = Math.max(2, chartWidth / n);
     const gap = Math.max(1, candleW * 0.25);
@@ -113,7 +113,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     };
 
     // 1. Draw Background Grid Lines & Price Labels
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
     for (let i = 1; i <= 5; i++) {
       const y = priceTop + (priceBottom - priceTop) * (i / 6);
@@ -122,9 +122,9 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       ctx.lineTo(chartWidth, y);
       ctx.stroke();
 
-      // Price labels (formatted with en-US)
+      // Price labels
       const pVal = maxPrice - (maxPrice - minPrice) * (i / 6);
-      ctx.fillStyle = '#64748b';
+      ctx.fillStyle = '#707A8A';
       ctx.font = '10px "JetBrains Mono", monospace';
       ctx.textAlign = 'left';
       ctx.fillText(formatNumber(pVal, 2), chartWidth + 6, y + 3);
@@ -140,7 +140,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     ctx.stroke();
 
     // Volume label
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = '#707A8A';
     ctx.font = '9px "JetBrains Mono", monospace';
     ctx.fillText('VOL', 8, volTop + 10);
     ctx.fillText(formatVolume(maxVol), chartWidth + 6, volTop + 10);
@@ -149,7 +149,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     if (visibleIndicators.boll && indicators['BOLL_UPPER'] && indicators['BOLL_LOWER']) {
       const upper = indicators['BOLL_UPPER'];
       const lower = indicators['BOLL_LOWER'];
-      ctx.fillStyle = 'rgba(0, 242, 254, 0.04)';
+      ctx.fillStyle = 'rgba(252, 213, 53, 0.03)';
       ctx.beginPath();
       let started = false;
       for (let i = 0; i < n; i++) {
@@ -175,7 +175,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       ctx.fill();
 
       // Band border lines
-      ctx.strokeStyle = 'rgba(0, 242, 254, 0.3)';
+      ctx.strokeStyle = 'rgba(252, 213, 53, 0.25)';
       ctx.lineWidth = 1;
       ['BOLL_UPPER', 'BOLL_LOWER', 'BOLL_MID'].forEach((bKey) => {
         const line = indicators[bKey];
@@ -193,11 +193,11 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       });
     }
 
-    // 3. Draw Candlesticks & Volume
+    // 3. Draw Candlesticks & Volume (Binance #2EBD85 buy green, #F6465D sell red)
     candles.forEach((c, i) => {
       const x = i * candleW;
       const isUp = c.close >= c.open;
-      const color = isUp ? '#10b981' : '#f43f5e';
+      const color = isUp ? '#2EBD85' : '#F6465D';
 
       const yOpen = priceToY(c.open);
       const yClose = priceToY(c.close);
@@ -220,7 +220,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
 
       // Volume bar
       const vY = volToY(c.volume);
-      ctx.fillStyle = isUp ? 'rgba(16, 185, 129, 0.45)' : 'rgba(244, 63, 94, 0.45)';
+      ctx.fillStyle = isUp ? 'rgba(46, 189, 133, 0.45)' : 'rgba(246, 70, 93, 0.45)';
       ctx.fillRect(x, vY, barW, volBottom - vY);
     });
 
@@ -241,61 +241,60 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     };
 
     if (visibleIndicators.sma) {
-      if (indicators['SMA_7']) drawLine(indicators['SMA_7'], '#f59e0b', 1.5);
-      if (indicators['SMA_25']) drawLine(indicators['SMA_25'], '#00f2fe', 1.5);
-      if (indicators['SMA_99']) drawLine(indicators['SMA_99'], '#8b5cf6', 1.5);
+      if (indicators['SMA_7']) drawLine(indicators['SMA_7'], '#FCD535', 1.5); // Binance yellow
+      if (indicators['SMA_25']) drawLine(indicators['SMA_25'], '#3B82F6', 1.5); // Institutional blue
+      if (indicators['SMA_99']) drawLine(indicators['SMA_99'], '#A855F7', 1.5); // Violet
     }
     if (visibleIndicators.ema) {
-      if (indicators['EMA_12']) drawLine(indicators['EMA_12'], '#ec4899', 1.5);
-      if (indicators['EMA_26']) drawLine(indicators['EMA_26'], '#3b82f6', 1.5);
+      if (indicators['EMA_12']) drawLine(indicators['EMA_12'], '#F59E0B', 1.5); // Amber
+      if (indicators['EMA_26']) drawLine(indicators['EMA_26'], '#06B6D4', 1.5); // Cyan
     }
 
     // 5. RSI Subplot
     if (visibleIndicators.rsi && indicators['RSI_14']) {
       // 70 and 30 dashed reference lines
       ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = 'rgba(244, 63, 94, 0.3)';
+      ctx.strokeStyle = 'rgba(246, 70, 93, 0.3)';
       ctx.beginPath();
       ctx.moveTo(0, rsiToY(70));
       ctx.lineTo(chartWidth, rsiToY(70));
       ctx.stroke();
 
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.3)';
+      ctx.strokeStyle = 'rgba(46, 189, 133, 0.3)';
       ctx.beginPath();
       ctx.moveTo(0, rsiToY(30));
       ctx.lineTo(chartWidth, rsiToY(30));
       ctx.stroke();
       ctx.setLineDash([]);
 
-      ctx.fillStyle = '#64748b';
+      // RSI Label
+      ctx.fillStyle = '#707A8A';
       ctx.font = '9px "JetBrains Mono", monospace';
+      ctx.fillText('RSI (14)', 8, rsiTop + 10);
       ctx.fillText('70', chartWidth + 6, rsiToY(70) + 3);
       ctx.fillText('30', chartWidth + 6, rsiToY(30) + 3);
 
-      ctx.fillStyle = '#f59e0b';
-      ctx.fillText('RSI (14)', 8, rsiTop + 10);
-
       // RSI Curve
-      const rsiVals = indicators['RSI_14'];
-      ctx.strokeStyle = '#f59e0b';
+      const rsiLine = indicators['RSI_14'];
+      ctx.strokeStyle = '#FCD535';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      let s = false;
+      let started = false;
       for (let i = 0; i < n; i++) {
-        if (rsiVals[i] != null) {
+        if (rsiLine[i] != null) {
           const x = i * candleW + barW / 2;
-          const y = rsiToY(rsiVals[i]!);
-          if (!s) { ctx.moveTo(x, y); s = true; } else { ctx.lineTo(x, y); }
+          const y = rsiToY(rsiLine[i]!);
+          if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
         }
       }
       ctx.stroke();
     }
 
-    // 6. Time ticks along bottom
-    const step = Math.max(1, Math.floor(n / 6));
-    ctx.fillStyle = '#64748b';
+    // 6. X-Axis Time Labels
+    ctx.fillStyle = '#707A8A';
     ctx.font = '9px "JetBrains Mono", monospace';
     ctx.textAlign = 'center';
+    const step = Math.max(1, Math.floor(n / 6));
     for (let i = 0; i < n; i += step) {
       const c = candles[i];
       const x = i * candleW + barW / 2;
@@ -308,7 +307,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       const x = hoverIdx * candleW + barW / 2;
 
       ctx.setLineDash([3, 3]);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.strokeStyle = 'rgba(252, 213, 53, 0.5)';
       ctx.lineWidth = 1;
 
       // Vertical line across chart
@@ -324,11 +323,11 @@ export const CandlestickChart: React.FC<ChartProps> = ({
         ctx.lineTo(chartWidth, mousePos.y);
         ctx.stroke();
 
-        // Price tag on axis
+        // Price tag on axis (Binance yellow pill with dark text)
         const hoverPrice = maxPrice - (mousePos.y / priceH) * (maxPrice - minPrice);
-        ctx.fillStyle = 'var(--accent-cyan)';
+        ctx.fillStyle = '#FCD535';
         ctx.fillRect(chartWidth, mousePos.y - 9, yAxisWidth, 18);
-        ctx.fillStyle = '#07090e';
+        ctx.fillStyle = '#12161C';
         ctx.font = 'bold 10px "JetBrains Mono", monospace';
         ctx.textAlign = 'left';
         ctx.fillText(formatNumber(hoverPrice, 2), chartWidth + 5, mousePos.y + 4);
@@ -344,7 +343,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const yAxisWidth = 65;
+    const yAxisWidth = 70;
     const chartWidth = Math.max(10, rect.width - yAxisWidth);
     const candleW = Math.max(2, chartWidth / candles.length);
     const idx = Math.min(candles.length - 1, Math.max(0, Math.floor(x / candleW)));
@@ -374,19 +373,19 @@ export const CandlestickChart: React.FC<ChartProps> = ({
           borderBottom: '1px solid var(--border-color)',
           color: 'var(--text-secondary)'
         }}>
-          <span>Time: <strong style={{ color: '#fff' }}>{activeCandle.open_time.replace('T', ' ').slice(0, 19)}</strong></span>
-          <span>O: <strong style={{ color: '#fff' }}>{formatNumber(activeCandle.open, 2)}</strong></span>
-          <span>H: <strong style={{ color: '#10b981' }}>{formatNumber(activeCandle.high, 2)}</strong></span>
-          <span>L: <strong style={{ color: '#f43f5e' }}>{formatNumber(activeCandle.low, 2)}</strong></span>
-          <span>C: <strong style={{ color: activeCandle.close >= activeCandle.open ? '#10b981' : '#f43f5e' }}>
+          <span>Time: <strong style={{ color: 'var(--text-primary)' }}>{activeCandle.open_time.replace('T', ' ').slice(0, 19)}</strong></span>
+          <span>O: <strong style={{ color: 'var(--text-primary)' }}>{formatNumber(activeCandle.open, 2)}</strong></span>
+          <span>H: <strong style={{ color: 'var(--color-success)' }}>{formatNumber(activeCandle.high, 2)}</strong></span>
+          <span>L: <strong style={{ color: 'var(--color-danger)' }}>{formatNumber(activeCandle.low, 2)}</strong></span>
+          <span>C: <strong style={{ color: activeCandle.close >= activeCandle.open ? 'var(--color-success)' : 'var(--color-danger)' }}>
             {formatNumber(activeCandle.close, 2)}
           </strong></span>
-          <span>Vol: <strong style={{ color: 'var(--accent-cyan)' }}>{formatVolume(activeCandle.volume)}</strong></span>
+          <span>Vol: <strong style={{ color: 'var(--accent-yellow)' }}>{formatVolume(activeCandle.volume)}</strong></span>
           {hoverIdx !== null && indicators['RSI_14'] && indicators['RSI_14'][hoverIdx] != null && (
-            <span>RSI: <strong style={{ color: '#f59e0b' }}>{formatNumber(indicators['RSI_14'][hoverIdx], 1)}</strong></span>
+            <span>RSI: <strong style={{ color: 'var(--color-warning)' }}>{formatNumber(indicators['RSI_14'][hoverIdx], 1)}</strong></span>
           )}
           {hoverIdx !== null && indicators['SMA_25'] && indicators['SMA_25'][hoverIdx] != null && (
-            <span>SMA(25): <strong style={{ color: 'var(--accent-cyan)' }}>{formatNumber(indicators['SMA_25'][hoverIdx], 2)}</strong></span>
+            <span>SMA(25): <strong style={{ color: '#3B82F6' }}>{formatNumber(indicators['SMA_25'][hoverIdx], 2)}</strong></span>
           )}
         </div>
       )}
@@ -403,3 +402,5 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     </div>
   );
 };
+
+export default CandlestickChart;
