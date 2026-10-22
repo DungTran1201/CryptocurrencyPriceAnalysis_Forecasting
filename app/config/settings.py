@@ -54,4 +54,4 @@ class Settings(BaseSettings):
         
         return cls(**yaml_data) 
 
-setup = Settings.load_from_yaml(filename = "/workspaces/Binance-Predict-Value-And-Trend/config.yaml")
+setup = Settings.load_from_yaml(filename = "config.yaml")

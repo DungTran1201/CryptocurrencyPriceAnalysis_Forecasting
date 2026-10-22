@@ -21,7 +21,7 @@ BASE_DIR = setup.base_dir
 FILE_NAME = f'{setup.data.symbol}_{setup.data.time.frame}_data_v2.csv'
 DATA_PATH = os.path.join(BASE_DIR, "data", "raw", FILE_NAME)
 
-df = pd.read_csv(DATA_PATH)
+df = pd.read_csv(DATA_PATH) if os.path.exists(DATA_PATH) else pd.DataFrame(columns=['Open_time', 'Open', 'High', 'Low', 'Close', 'Volume'])
 indicators_name = ["SMA", "EMA", "BOLL", "RSI"]
 
 def plot_chart(df: pd.DataFrame, timeframe: str, config: dict) -> None:
