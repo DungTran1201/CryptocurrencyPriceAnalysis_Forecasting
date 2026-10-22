@@ -81,6 +81,6 @@ def get_sync_db():
 async def init_db():
     """Initialize all database tables defined in models."""
     # Ensure all models are imported so Base metadata is populated
-    from backend.app.models import market, forecast, ml_model  # noqa: F401
+    from backend.app.models import market, forecast, ml_model, pipeline, data_quality  # noqa: F401
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

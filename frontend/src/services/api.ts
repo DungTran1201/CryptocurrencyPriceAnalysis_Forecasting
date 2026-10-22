@@ -90,6 +90,90 @@ export const api = {
       }
     ),
 
+  // Pipelines
+  getPipelineOverview: (): Promise<any> =>
+    fetchJson(`${API_BASE}/pipelines/overview`),
+
+  getPipelineRuns: (symbol?: string, status?: string, limit = 50, offset = 0): Promise<any[]> => {
+    const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
+    if (symbol) params.append('symbol', symbol);
+    if (status) params.append('status', status);
+    return fetchJson(`${API_BASE}/pipelines/runs?${params.toString()}`);
+  },
+
+  getPipelineRunDetails: (runId: string): Promise<any> =>
+    fetchJson(`${API_BASE}/pipelines/runs/${runId}`),
+
+  triggerPipeline: (symbol: string, timeframe: string, lookbackDays = 30, syncMode = false) =>
+    fetchJson(`${API_BASE}/pipelines/trigger?sync_mode=${syncMode}`, {
+      method: 'POST',
+      body: JSON.stringify({ symbol, timeframe, trigger_type: 'MANUAL', lookback_days: lookbackDays })
+    }),
+
+  // Data Quality & Lineage
+  getDataQualityOverview: (): Promise<any> =>
+    fetchJson(`${API_BASE}/data-quality/overview`),
+
+  getDataQualityRuns: (symbol?: string, status?: string, limit = 50): Promise<any[]> => {
+    const params = new URLSearchParams({ limit: limit.toString() });
+    if (symbol) params.append('symbol', symbol);
+    if (status) params.append('status', status);
+    return fetchJson(`${API_BASE}/data-quality/runs?${params.toString()}`);
+  },
+
+  getDataQualityRunDetails: (runId: string): Promise<any> =>
+    fetchJson(`${API_BASE}/data-quality/runs/${runId}`),
+
+  evaluateDataQuality: (symbol: string, timeframe: string, limit = 1000) =>
+    fetchJson(`${API_BASE}/data-quality/evaluate`, {
+      method: 'POST',
+      body: JSON.stringify({ symbol, timeframe, limit })
+    }),
+
+  getDataLineage: (): Promise<any> =>
+    fetchJson(`${API_BASE}/data-quality/lineage`),
+
+  // Data Explorer
+  getDatasets: (): Promise<any[]> =>
+    fetchJson(`${API_BASE}/data-explorer/datasets`),
+
+  previewDataset: (dataset: string, page = 1, pageSize = 25, symbol?: string, timeframe?: string): Promise<any> => {
+    const params = new URLSearchParams({ dataset, page: page.toString(), page_size: pageSize.toString() });
+    if (symbol) params.append('symbol', symbol);
+    if (timeframe) params.append('timeframe', timeframe);
+    return fetchJson(`${API_BASE}/data-explorer/preview?${params.toString()}`);
+  },
+
+  getExportCsvUrl: (dataset: string, symbol?: string, timeframe?: string, limit = 2000): string => {
+    const params = new URLSearchParams({ dataset, limit: limit.toString() });
+    if (symbol) params.append('symbol', symbol);
+    if (timeframe) params.append('timeframe', timeframe);
+    return `${API_BASE}/data-explorer/export?${params.toString()}`;
+  },
+
+  // Analytics
+  getReturnsDistribution: (symbol: string, timeframe: string, limit = 500): Promise<any> =>
+    fetchJson(`${API_BASE}/analytics/returns?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`),
+
+  getRollingVolatility: (symbol: string, timeframe: string, limit = 500): Promise<any> =>
+    fetchJson(`${API_BASE}/analytics/volatility?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`),
+
+  getDrawdowns: (symbol: string, timeframe: string, limit = 500): Promise<any> =>
+    fetchJson(`${API_BASE}/analytics/drawdowns?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`),
+
+  getCorrelationMatrix: (symbols = 'BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT', timeframe = '1h', limit = 300): Promise<any> =>
+    fetchJson(`${API_BASE}/analytics/correlations?symbols=${symbols}&timeframe=${timeframe}&limit=${limit}`),
+
+  // MLflow Tracking & Experiments
+  getTrackingStatus: (): Promise<any> =>
+    fetchJson(`${API_BASE}/models/tracking-status`),
+
+  getExperiments: (symbol?: string): Promise<any[]> => {
+    const params = new URLSearchParams();
+    if (symbol) params.append('symbol', symbol);
+    return fetchJson(`${API_BASE}/models/experiments?${params.toString()}`);
+  },
+
   // System
   getSystemStatus: (): Promise<SystemStatus> =>
     fetchJson<SystemStatus>(`${API_BASE}/system/status`)

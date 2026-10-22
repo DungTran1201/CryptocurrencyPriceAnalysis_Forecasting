@@ -7,7 +7,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from backend.app.core.database import Base
-from backend.app.models import market, forecast, ml_model  # noqa: F401
+from backend.app.models import market, forecast, ml_model, pipeline, data_quality  # noqa: F401
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 

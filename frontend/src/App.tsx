@@ -7,9 +7,17 @@ import {
   Cpu,
   Activity,
   Menu,
-  X
+  X,
+  Layers,
+  ShieldCheck,
+  Database,
+  Server
 } from 'lucide-react';
-import { MarketOverview } from './views/MarketOverview';
+import { DataOpsOverview } from './views/DataOpsOverview';
+import { PipelineObservatory } from './views/PipelineObservatory';
+import { DataQualityLineage } from './views/DataQualityLineage';
+import { DataExplorer } from './views/DataExplorer';
+import { MarketAnalytics } from './views/MarketAnalytics';
 import { PredictionStudio } from './views/PredictionStudio';
 import { ForecastHistory } from './views/ForecastHistory';
 import { ModelLab } from './views/ModelLab';
@@ -17,10 +25,19 @@ import { SystemStatusView } from './views/SystemStatusView';
 import { api } from './services/api';
 import { SystemStatus } from './types';
 
-type TabType = 'market' | 'studio' | 'history' | 'models' | 'system';
+type TabType =
+  | 'overview'
+  | 'pipelines'
+  | 'quality'
+  | 'explorer'
+  | 'analytics'
+  | 'studio'
+  | 'history'
+  | 'models'
+  | 'system';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('market');
+  const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [systemState, setSystemState] = useState<{
     status: 'ONLINE' | 'AWAITING_DATA' | 'OFFLINE';
@@ -46,7 +63,7 @@ export const App: React.FC = () => {
           setSystemState({
             status: 'AWAITING_DATA',
             label: 'NO STORED CANDLES',
-            details: 'Database connected. Click Sync Binance to seed market data.'
+            details: 'Database connected. Click Sync Medallion to seed market data.'
           });
         }
       } else {
@@ -72,11 +89,15 @@ export const App: React.FC = () => {
   }, []);
 
   const navItems: { id: TabType; label: string; icon: React.ReactNode }[] = [
-    { id: 'market', label: 'Market Overview', icon: <LineChart size={16} /> },
-    { id: 'studio', label: 'Prediction Studio', icon: <Sparkles size={16} /> },
-    { id: 'history', label: 'Forecast History', icon: <History size={16} /> },
-    { id: 'models', label: 'Model Lab', icon: <Cpu size={16} /> },
-    { id: 'system', label: 'System Status', icon: <Activity size={16} /> },
+    { id: 'overview', label: 'Data Operations', icon: <Layers size={15} /> },
+    { id: 'pipelines', label: 'Pipelines', icon: <Activity size={15} /> },
+    { id: 'quality', label: 'Quality & Lineage', icon: <ShieldCheck size={15} /> },
+    { id: 'explorer', label: 'Data Explorer', icon: <Database size={15} /> },
+    { id: 'analytics', label: 'Market Analytics', icon: <LineChart size={15} /> },
+    { id: 'studio', label: 'Prediction Studio', icon: <Sparkles size={15} /> },
+    { id: 'history', label: 'Forecast History', icon: <History size={15} /> },
+    { id: 'models', label: 'Model Lab', icon: <Cpu size={15} /> },
+    { id: 'system', label: 'System Health', icon: <Server size={15} /> },
   ];
 
   const handleTabSelect = (tab: TabType) => {
@@ -88,16 +109,16 @@ export const App: React.FC = () => {
     <div className="app-container">
       {/* Global Navbar */}
       <nav className="navbar" role="navigation" aria-label="Main Navigation">
-        <div className="nav-brand">
+        <div className="nav-brand" onClick={() => handleTabSelect('overview')} style={{ cursor: 'pointer' }}>
           <div className="brand-icon">
             <TrendingUp size={20} color="#07090e" strokeWidth={2.5} />
           </div>
           <div>
-            <div style={{ color: '#fff', fontSize: '1.15rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
-              CRYPTO INTELLIGENCE
+            <div style={{ color: '#fff', fontSize: '1.05rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
+              CRYPTO DATA PLATFORM
             </div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', letterSpacing: '0.08em', fontFamily: 'var(--font-mono)' }}>
-              FORECASTING & EVALUATION ENGINE
+            <div style={{ fontSize: '0.65rem', color: 'var(--accent-cyan)', letterSpacing: '0.08em', fontFamily: 'var(--font-mono)' }}>
+              DATA ENG • ANALYTICS • FORECAST LAB
             </div>
           </div>
         </div>
@@ -162,7 +183,11 @@ export const App: React.FC = () => {
 
       {/* Main Viewport Content */}
       <main className="main-viewport">
-        {activeTab === 'market' && <MarketOverview />}
+        {activeTab === 'overview' && <DataOpsOverview onNavigateTab={(tab) => handleTabSelect(tab as TabType)} />}
+        {activeTab === 'pipelines' && <PipelineObservatory />}
+        {activeTab === 'quality' && <DataQualityLineage />}
+        {activeTab === 'explorer' && <DataExplorer />}
+        {activeTab === 'analytics' && <MarketAnalytics />}
         {activeTab === 'studio' && <PredictionStudio />}
         {activeTab === 'history' && <ForecastHistory />}
         {activeTab === 'models' && <ModelLab />}
@@ -172,10 +197,10 @@ export const App: React.FC = () => {
       {/* Global Footer */}
       <footer className="app-footer">
         <div>
-          Binance Predict Value & Trend • Enterprise Crypto Market Forecasting Architecture
+          Binance Predict Value & Trend • Enterprise Crypto Data & Analytics Platform
         </div>
         <div style={{ fontFamily: 'var(--font-mono)' }}>
-          FastAPI Backend • React TypeScript Frontend • Walk-Forward Cross Validation
+          Medallion Architecture • Data Quality SLAs • Walk-Forward Walk CV • Realtime REST Telemetry
         </div>
       </footer>
     </div>

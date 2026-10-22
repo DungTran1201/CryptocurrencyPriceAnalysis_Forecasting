@@ -14,6 +14,7 @@ from backend.app.schemas.ml_model import (
     ModelTrainingResultSchema
 )
 from backend.app.services.model_service import ModelService
+from backend.app.services.mlflow_adapter import MLflowAdapter
 
 from backend.app.core.logging import get_logger
 
@@ -21,6 +22,21 @@ logger = get_logger("ModelLabAPI")
 
 router = APIRouter(prefix="/models", tags=["Model Lab"])
 model_service = ModelService()
+
+
+@router.get("/tracking-status", summary="Check MLflow tracking server connection and fallback mode")
+async def get_tracking_status() -> dict:
+    """Returns status of external MLflow tracking connection or local database fallback."""
+    return await MLflowAdapter.get_tracking_status()
+
+
+@router.get("/experiments", summary="List experiment runs with hyperparameters and validation metrics")
+async def list_experiments(
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    db: AsyncSession = Depends(get_db)
+) -> list:
+    """Provides experiment run tracking view adhering to MLflow standard entities."""
+    return await MLflowAdapter.list_experiment_runs(db, symbol=symbol)
 
 
 @router.get("", response_model=List[ModelCardSchema])
