@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { KlineCandle } from '../types';
+import { formatNumber, formatVolume } from '../utils/formatters';
 
 interface ChartProps {
   candles: KlineCandle[];
@@ -19,8 +20,27 @@ export const CandlestickChart: React.FC<ChartProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height: 480 });
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+
+  // ResizeObserver for dynamic responsiveness
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setDimensions({ width, height });
+        }
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -33,26 +53,26 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     // Handle high DPI
     const dpr = window.devicePixelRatio || 1;
     const rect = container.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-
     const width = rect.width;
     const height = rect.height;
 
-    // Layout division:
-    // Main price chart: 65% of height
-    // Volume: 15% of height
-    // RSI: 20% of height
-    const priceH = height * 0.65;
-    const volH = height * 0.15;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
 
-    const priceTop = 10;
+    // Layout division:
+    // Main price chart: 62% of height
+    // Volume: 16% of height
+    // RSI: 22% of height
+    const priceH = height * 0.62;
+    const volH = height * 0.16;
+
+    const priceTop = 15;
     const priceBottom = priceH - 10;
-    const volTop = priceH + 10;
-    const volBottom = priceH + volH - 5;
-    const rsiTop = priceH + volH + 10;
-    const rsiBottom = height - 15;
+    const volTop = priceH + 12;
+    const volBottom = priceH + volH - 6;
+    const rsiTop = priceH + volH + 12;
+    const rsiBottom = height - 20;
 
     ctx.clearRect(0, 0, width, height);
 
@@ -73,9 +93,11 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     maxPrice += pPadding;
 
     const n = candles.length;
-    const candleW = Math.max(2, (width - 60) / n);
-    const gap = candleW * 0.25;
-    const barW = candleW - gap;
+    const yAxisWidth = 65;
+    const chartWidth = Math.max(10, width - yAxisWidth);
+    const candleW = Math.max(2, chartWidth / n);
+    const gap = Math.max(1, candleW * 0.25);
+    const barW = Math.max(1, candleW - gap);
 
     const priceToY = (p: number) => {
       return priceBottom - ((p - minPrice) / (maxPrice - minPrice)) * (priceBottom - priceTop);
@@ -90,24 +112,25 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       return rsiBottom - (r / 100) * (rsiBottom - rsiTop);
     };
 
-    // 1. Draw Grid Lines
+    // 1. Draw Background Grid Lines & Price Labels
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
     ctx.lineWidth = 1;
-    for (let i = 1; i <= 4; i++) {
-      const y = priceTop + (priceBottom - priceTop) * (i / 5);
+    for (let i = 1; i <= 5; i++) {
+      const y = priceTop + (priceBottom - priceTop) * (i / 6);
       ctx.beginPath();
       ctx.moveTo(0, y);
-      ctx.lineTo(width - 50, y);
+      ctx.lineTo(chartWidth, y);
       ctx.stroke();
 
-      // Price labels
-      const pVal = maxPrice - (maxPrice - minPrice) * (i / 5);
+      // Price labels (formatted with en-US)
+      const pVal = maxPrice - (maxPrice - minPrice) * (i / 6);
       ctx.fillStyle = '#64748b';
       ctx.font = '10px "JetBrains Mono", monospace';
-      ctx.fillText(pVal.toFixed(1), width - 45, y + 3);
+      ctx.textAlign = 'left';
+      ctx.fillText(formatNumber(pVal, 2), chartWidth + 6, y + 3);
     }
 
-    // Dividers
+    // Dividers between panels
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.beginPath();
     ctx.moveTo(0, priceH);
@@ -115,6 +138,12 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     ctx.moveTo(0, priceH + volH);
     ctx.lineTo(width, priceH + volH);
     ctx.stroke();
+
+    // Volume label
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px "JetBrains Mono", monospace';
+    ctx.fillText('VOL', 8, volTop + 10);
+    ctx.fillText(formatVolume(maxVol), chartWidth + 6, volTop + 10);
 
     // 2. Bollinger Bands Cloud
     if (visibleIndicators.boll && indicators['BOLL_UPPER'] && indicators['BOLL_LOWER']) {
@@ -146,7 +175,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       ctx.fill();
 
       // Band border lines
-      ctx.strokeStyle = 'rgba(0, 242, 254, 0.25)';
+      ctx.strokeStyle = 'rgba(0, 242, 254, 0.3)';
       ctx.lineWidth = 1;
       ['BOLL_UPPER', 'BOLL_LOWER', 'BOLL_MID'].forEach((bKey) => {
         const line = indicators[bKey];
@@ -191,7 +220,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
 
       // Volume bar
       const vY = volToY(c.volume);
-      ctx.fillStyle = isUp ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.4)';
+      ctx.fillStyle = isUp ? 'rgba(16, 185, 129, 0.45)' : 'rgba(244, 63, 94, 0.45)';
       ctx.fillRect(x, vY, barW, volBottom - vY);
     });
 
@@ -228,20 +257,23 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       ctx.strokeStyle = 'rgba(244, 63, 94, 0.3)';
       ctx.beginPath();
       ctx.moveTo(0, rsiToY(70));
-      ctx.lineTo(width - 50, rsiToY(70));
+      ctx.lineTo(chartWidth, rsiToY(70));
       ctx.stroke();
 
       ctx.strokeStyle = 'rgba(16, 185, 129, 0.3)';
       ctx.beginPath();
       ctx.moveTo(0, rsiToY(30));
-      ctx.lineTo(width - 50, rsiToY(30));
+      ctx.lineTo(chartWidth, rsiToY(30));
       ctx.stroke();
       ctx.setLineDash([]);
 
       ctx.fillStyle = '#64748b';
       ctx.font = '9px "JetBrains Mono", monospace';
-      ctx.fillText('70', width - 45, rsiToY(70) + 3);
-      ctx.fillText('30', width - 45, rsiToY(30) + 3);
+      ctx.fillText('70', chartWidth + 6, rsiToY(70) + 3);
+      ctx.fillText('30', chartWidth + 6, rsiToY(30) + 3);
+
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillText('RSI (14)', 8, rsiTop + 10);
 
       // RSI Curve
       const rsiVals = indicators['RSI_14'];
@@ -259,15 +291,27 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       ctx.stroke();
     }
 
-    // 6. Crosshairs on Hover
+    // 6. Time ticks along bottom
+    const step = Math.max(1, Math.floor(n / 6));
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    for (let i = 0; i < n; i += step) {
+      const c = candles[i];
+      const x = i * candleW + barW / 2;
+      const timeLabel = c.open_time.slice(11, 16) || c.open_time.slice(5, 10);
+      ctx.fillText(timeLabel, x, height - 4);
+    }
+
+    // 7. Crosshairs on Hover
     if (hoverIdx !== null && hoverIdx >= 0 && hoverIdx < n && mousePos) {
       const x = hoverIdx * candleW + barW / 2;
 
       ctx.setLineDash([3, 3]);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
       ctx.lineWidth = 1;
 
-      // Vertical line
+      // Vertical line across chart
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, height);
@@ -277,20 +321,21 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       if (mousePos.y <= priceH) {
         ctx.beginPath();
         ctx.moveTo(0, mousePos.y);
-        ctx.lineTo(width - 50, mousePos.y);
+        ctx.lineTo(chartWidth, mousePos.y);
         ctx.stroke();
 
         // Price tag on axis
         const hoverPrice = maxPrice - (mousePos.y / priceH) * (maxPrice - minPrice);
-        ctx.fillStyle = '#00f2fe';
-        ctx.fillRect(width - 50, mousePos.y - 9, 50, 18);
+        ctx.fillStyle = 'var(--accent-cyan)';
+        ctx.fillRect(chartWidth, mousePos.y - 9, yAxisWidth, 18);
         ctx.fillStyle = '#07090e';
         ctx.font = 'bold 10px "JetBrains Mono", monospace';
-        ctx.fillText(hoverPrice.toFixed(1), width - 48, mousePos.y + 3);
+        ctx.textAlign = 'left';
+        ctx.fillText(formatNumber(hoverPrice, 2), chartWidth + 5, mousePos.y + 4);
       }
       ctx.setLineDash([]);
     }
-  }, [candles, indicators, visibleIndicators, hoverIdx, mousePos]);
+  }, [candles, indicators, visibleIndicators, hoverIdx, mousePos, dimensions]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const container = containerRef.current;
@@ -299,7 +344,9 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const candleW = Math.max(2, (rect.width - 60) / candles.length);
+    const yAxisWidth = 65;
+    const chartWidth = Math.max(10, rect.width - yAxisWidth);
+    const candleW = Math.max(2, chartWidth / candles.length);
     const idx = Math.min(candles.length - 1, Math.max(0, Math.floor(x / candleW)));
     setHoverIdx(idx);
     setMousePos({ x, y });
@@ -313,35 +360,38 @@ export const CandlestickChart: React.FC<ChartProps> = ({
   const activeCandle = hoverIdx !== null && candles[hoverIdx] ? candles[hoverIdx] : candles[candles.length - 1];
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* HUD Info Header */}
       {activeCandle && (
         <div style={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: '1rem',
-          padding: '0.4rem 0.75rem',
-          fontSize: '0.8rem',
+          gap: '1.25rem',
+          padding: '0.5rem 0.85rem',
+          fontSize: '0.82rem',
           fontFamily: 'var(--font-mono)',
           background: 'rgba(255, 255, 255, 0.02)',
           borderBottom: '1px solid var(--border-color)',
           color: 'var(--text-secondary)'
         }}>
           <span>Time: <strong style={{ color: '#fff' }}>{activeCandle.open_time.replace('T', ' ').slice(0, 19)}</strong></span>
-          <span>O: <strong style={{ color: '#fff' }}>{activeCandle.open.toFixed(2)}</strong></span>
-          <span>H: <strong style={{ color: '#10b981' }}>{activeCandle.high.toFixed(2)}</strong></span>
-          <span>L: <strong style={{ color: '#f43f5e' }}>{activeCandle.low.toFixed(2)}</strong></span>
+          <span>O: <strong style={{ color: '#fff' }}>{formatNumber(activeCandle.open, 2)}</strong></span>
+          <span>H: <strong style={{ color: '#10b981' }}>{formatNumber(activeCandle.high, 2)}</strong></span>
+          <span>L: <strong style={{ color: '#f43f5e' }}>{formatNumber(activeCandle.low, 2)}</strong></span>
           <span>C: <strong style={{ color: activeCandle.close >= activeCandle.open ? '#10b981' : '#f43f5e' }}>
-            {activeCandle.close.toFixed(2)}
+            {formatNumber(activeCandle.close, 2)}
           </strong></span>
-          <span>Vol: <strong style={{ color: '#00f2fe' }}>{activeCandle.volume.toFixed(2)}</strong></span>
+          <span>Vol: <strong style={{ color: 'var(--accent-cyan)' }}>{formatVolume(activeCandle.volume)}</strong></span>
           {hoverIdx !== null && indicators['RSI_14'] && indicators['RSI_14'][hoverIdx] != null && (
-            <span>RSI: <strong style={{ color: '#f59e0b' }}>{indicators['RSI_14'][hoverIdx]?.toFixed(1)}</strong></span>
+            <span>RSI: <strong style={{ color: '#f59e0b' }}>{formatNumber(indicators['RSI_14'][hoverIdx], 1)}</strong></span>
+          )}
+          {hoverIdx !== null && indicators['SMA_25'] && indicators['SMA_25'][hoverIdx] != null && (
+            <span>SMA(25): <strong style={{ color: 'var(--accent-cyan)' }}>{formatNumber(indicators['SMA_25'][hoverIdx], 2)}</strong></span>
           )}
         </div>
       )}
 
-      {/* Canvas */}
+      {/* Canvas Container */}
       <div
         ref={containerRef}
         className="chart-container"

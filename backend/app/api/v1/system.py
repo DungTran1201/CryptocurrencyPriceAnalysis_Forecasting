@@ -1,6 +1,6 @@
 """System health and operational monitoring API endpoints."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ async def health_check():
     """Liveness probe."""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "app_name": settings.app_name,
         "version": settings.app_version
     }
@@ -53,7 +53,7 @@ async def system_status(db: AsyncSession = Depends(get_db)):
         status="OPERATIONAL",
         version=settings.app_version,
         environment=settings.app_env,
-        current_time=datetime.utcnow().isoformat(),
+        current_time=datetime.now(timezone.utc).isoformat(),
         database_connected=True,
         total_candles_stored=total_candles,
         total_forecasts_generated=total_forecasts,

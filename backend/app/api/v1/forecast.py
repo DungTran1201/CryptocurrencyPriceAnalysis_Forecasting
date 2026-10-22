@@ -14,6 +14,10 @@ from backend.app.schemas.forecast import (
 )
 from backend.app.services.forecast_service import ForecastService
 
+from backend.app.core.logging import get_logger
+
+logger = get_logger("ForecastAPI")
+
 router = APIRouter(prefix="/forecasts", tags=["Forecasts"])
 forecast_service = ForecastService()
 
@@ -32,8 +36,12 @@ async def generate_forecast(
             horizon_steps=payload.horizon_steps
         )
         return record
+    except ValueError as ve:
+        logger.warning(f"Validation error during forecast generation: {ve}")
+        raise HTTPException(status_code=400, detail=f"Inference request invalid: {str(ve)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
+        logger.error(f"Inference failed for {payload.symbol} {payload.timeframe}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Forecast inference encountered an internal server error.")
 
 
 @router.get("", response_model=ForecastHistoryResponse)

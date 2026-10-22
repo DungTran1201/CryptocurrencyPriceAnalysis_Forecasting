@@ -10,11 +10,14 @@ class SymbolInfoSchema(BaseModel):
     symbol: str
     base_asset: str
     quote_asset: str
-    current_price: float
-    change_24h: float
-    high_24h: float
-    low_24h: float
-    volume_24h: float
+    current_price: Optional[float] = None
+    change_24h: Optional[float] = None
+    high_24h: Optional[float] = None
+    low_24h: Optional[float] = None
+    volume_24h: Optional[float] = None
+    candle_count_24h: int = 0
+    has_full_24h: bool = False
+    data_status: str = "UNAVAILABLE"
     last_synced_at: Optional[datetime] = None
 
 

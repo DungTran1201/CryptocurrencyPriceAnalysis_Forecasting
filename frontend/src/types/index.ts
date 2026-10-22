@@ -2,12 +2,15 @@ export interface SymbolInfo {
   symbol: string;
   base_asset: string;
   quote_asset: string;
-  current_price: number;
-  change_24h: number;
-  high_24h: number;
-  low_24h: number;
-  volume_24h: number;
-  last_synced_at?: string;
+  current_price?: number | null;
+  change_24h?: number | null;
+  high_24h?: number | null;
+  low_24h?: number | null;
+  volume_24h?: number | null;
+  candle_count_24h?: number;
+  has_full_24h?: boolean;
+  data_status?: 'SYNCHRONIZED' | 'PARTIAL' | 'UNAVAILABLE' | 'STALE' | string;
+  last_synced_at?: string | null;
 }
 
 export interface KlineCandle {

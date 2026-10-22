@@ -204,12 +204,13 @@ Before any trained model is promoted to `is_active = True`, it must pass three g
 
 ### 1. Market Data
 - `GET /api/v1/market/symbols`
-  - Returns active crypto pairs with 24h ticker prices, percent change, high, low, volume.
+  - Returns active crypto pairs with 24h ticker prices, percent change, high, low, volume, `candle_count_24h`, `has_full_24h`, and explicit `data_status` (`"SYNCHRONIZED"`, `"PARTIAL"`, `"UNAVAILABLE"`, `"STALE"`). When no historical candles exist, metric fields are `null` (never false zeroes).
 - `GET /api/v1/market/klines?symbol=BTCUSDT&timeframe=1h&limit=200`
-  - Returns historical candles and computed technical indicators (SMA, EMA, Bollinger, RSI, MACD).
+  - Returns historical candles and technical indicators (SMA, EMA, Bollinger, RSI, MACD).
+  - Empty results return HTTP 200 with `count: 0`, `candles: []`, and `indicators: {}` conforming to `MarketDataResponseSchema`.
 - `POST /api/v1/market/sync`
   - Request: `{"symbol": "BTCUSDT", "timeframe": "1h", "lookback_days": 30}`
-  - Initiates incremental synchronization from Binance.
+  - Initiates incremental synchronization from Binance with strict parameter validation and sanitized error handling.
 
 ### 2. Predictions & Forecasting
 - `POST /api/v1/forecasts/generate`
@@ -270,12 +271,12 @@ Before any trained model is promoted to `is_active = True`, it must pass three g
 
 ## Testing & Verification
 
-All data pipeline, feature engineering, baseline comparison, model gating, forecast lifecycle, and REST contract tests are automated with pytest.
+All data pipeline, feature engineering, baseline comparison, model gating, forecast lifecycle, regression verification, and REST contract tests are automated.
 
-Run the test suite:
+### Backend Test Suite (pytest)
 ```bash
-# In active virtual environment:
-pytest tests/ -v
+# In project root:
+python -m pytest
 ```
 
 Output:
@@ -284,6 +285,11 @@ tests/test_api_contract.py::test_health_check_endpoint PASSED
 tests/test_api_contract.py::test_system_status_endpoint PASSED
 tests/test_api_contract.py::test_market_symbols_endpoint PASSED
 tests/test_api_contract.py::test_market_klines_endpoint PASSED
+tests/test_api_contract.py::test_market_klines_empty_regression PASSED
+tests/test_api_contract.py::test_market_klines_populated_contract PASSED
+tests/test_api_contract.py::test_market_klines_parameter_validation PASSED
+tests/test_api_contract.py::test_symbol_summaries_truthfulness_and_states PASSED
+tests/test_api_contract.py::test_sync_parameter_validation_and_safe_errors PASSED
 tests/test_api_contract.py::test_forecast_generate_and_list_lifecycle PASSED
 tests/test_api_contract.py::test_model_listing_endpoint PASSED
 tests/test_data_pipeline.py::test_kline_payload_parsing_and_normalization PASSED
@@ -296,8 +302,20 @@ tests/test_ml_pipeline.py::test_baselines_prediction PASSED
 tests/test_ml_pipeline.py::test_walk_forward_evaluation PASSED
 tests/test_ml_pipeline.py::test_forecast_lifecycle_and_reconciliation PASSED
 
-======================= 15 passed in 3.03s =======================
+============================= 20 passed in 2.71s =============================
 ```
+
+### Frontend Tests & Production Build
+```bash
+cd frontend
+
+# Run unit tests for en-US formatters and unavailable values:
+npm test
+
+# Run TypeScript type check and production bundle:
+npm run build
+```
+
 
 ---
 

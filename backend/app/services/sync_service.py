@@ -137,7 +137,7 @@ class BinanceSyncService:
     ) -> List[Dict[str, Any]]:
         """Parse raw Binance Kline arrays into validated dictionaries."""
         parsed = []
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
         for k in raw_klines:
             # Binance Kline format:
@@ -254,7 +254,7 @@ class BinanceSyncService:
                 total_candles=total or 0,
                 last_sync_status=status,
                 last_error=error_msg,
-                updated_at=datetime.utcnow()
+                updated_at=datetime.now(timezone.utc).replace(tzinfo=None)
             )
             db.add(checkpoint)
         else:
@@ -263,7 +263,7 @@ class BinanceSyncService:
                 checkpoint.last_close_time = max_close
             checkpoint.last_sync_status = status
             checkpoint.last_error = error_msg
-            checkpoint.updated_at = datetime.utcnow()
+            checkpoint.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         await db.flush()
         return checkpoint
@@ -292,11 +292,11 @@ class BinanceSyncService:
             logger.info(f"Resuming incremental sync for {symbol} {timeframe} from {latest_close}")
         else:
             # Initial seed: look back requested days
-            start_dt = datetime.utcnow() - timedelta(days=lookback_days_if_empty)
+            start_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=lookback_days_if_empty)
             start_ms = datetime_to_ms(start_dt)
             logger.info(f"Seeding new sync for {symbol} {timeframe} from {start_dt}")
 
-        now_ms = datetime_to_ms(datetime.utcnow())
+        now_ms = datetime_to_ms(datetime.now(timezone.utc).replace(tzinfo=None))
         total_synced = 0
         current_start = start_ms
 

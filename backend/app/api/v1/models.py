@@ -15,6 +15,10 @@ from backend.app.schemas.ml_model import (
 )
 from backend.app.services.model_service import ModelService
 
+from backend.app.core.logging import get_logger
+
+logger = get_logger("ModelLabAPI")
+
 router = APIRouter(prefix="/models", tags=["Model Lab"])
 model_service = ModelService()
 
@@ -88,5 +92,9 @@ async def train_model(
             n_splits=payload.n_splits
         )
         return ModelTrainingResultSchema(**result)
+    except ValueError as ve:
+        logger.warning(f"Validation error during model training: {ve}")
+        raise HTTPException(status_code=400, detail=f"Training parameters invalid: {str(ve)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Training pipeline failed: {str(e)}")
+        logger.error(f"Training pipeline failed for {payload.symbol} {payload.timeframe}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Model training pipeline encountered an internal server error.")

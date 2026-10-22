@@ -136,7 +136,7 @@ class ForecastService:
             timeframe=timeframe,
             horizon_steps=horizon_steps,
             data_cutoff_time=cutoff_time,
-            forecast_timestamp=datetime.utcnow(),
+            forecast_timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             target_time=target_time,
             current_price=current_price,
             predicted_price=round(pred_price, 4),
@@ -160,7 +160,7 @@ class ForecastService:
 
     async def reconcile_pending_forecasts(self, db: AsyncSession) -> int:
         """Audit and reconcile pending forecasts whose target time has elapsed."""
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
         
         # Query pending forecasts where target_time <= now_utc
         stmt = select(ForecastRecord).where(
@@ -207,7 +207,7 @@ class ForecastService:
                 f.percentage_error = round(pct_err, 4)
                 f.direction_correct = dir_correct
                 f.status = "RECONCILED"
-                f.reconciled_at = datetime.utcnow()
+                f.reconciled_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 reconciled_count += 1
 
         if reconciled_count > 0:

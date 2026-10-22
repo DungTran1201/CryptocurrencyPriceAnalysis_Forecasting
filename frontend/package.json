@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "node --test src/utils/formatters.test.ts",
     "preview": "vite preview"
   },
+
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
