@@ -44,72 +44,70 @@ The platform user interface is built with **React 18**, **TypeScript 5.6**, **Ta
 ### 1. Data Operations Overview (`/overview`)
 The primary operational cockpit displaying end-to-end pipeline health, Medallion stage watermarks, live SLA scorecard, candle freshness trackers, and immediate manual orchestration triggers.
 ![Data Operations Overview](docs/screenshots/overview.png)
-*Displays: Real-time telemetry across the Medallion lifecycle (Ingestion → Validation → Marts → Features → Models), recent orchestrator runs with duration, and active platform workbenches.*
+*Displays: Real-time telemetry across the Medallion lifecycle (Source → Bronze 78k rows → Silver 76k rows → Gold Marts 1.4k rows → Features → Serving), SLA scorecards (38/41 rules, 92.7%), candle freshness ("Just now" / SYNCHRONIZED), and recent orchestrator runs with duration.*
 
 ---
 
 ### 2. Live Market Monitor & Real-Time Pipeline Flow (`/live`)
-Dedicated real-time market operations monitor featuring a live candlestick chart, order book depth, rolling trade feed, and the **Real-Time Data Pipeline Telemetry Flowchart**.
-```
-[N1: WS Ingest] ──► [N2: Normalize] ──► [N3: Bounded Queue] ──► [N4: NATS Broker]
-                                                                        │
-[N8: Medallion Flush] ◄── [N7: WS Gateway] ◄── [N6: Incr. Analytics] ◄──┴──► [N5: Consumer]
-```
-- **8-Node Execution Graph**: Traces `ws_ingest` → `normalize` → `bounded_queue` → `nats_broker` → `consumer_handle` → `incremental_analytics` → `ws_gateway` → `medallion_flush`.
-- **Latency Telemetry**: Calculates per-node rolling p95 latency, inline sub-pipeline sum (~2.0 ms), background micro-batch flush time (~78 ms), and automatically flags pipeline bottlenecks.
-- **WebSocket Broadcast**: Pushes coalesced real-time prices, depth, trade volume, and incremental technical indicators at 100 ms intervals.
+Dedicated real-time market operations monitor featuring a live candlestick chart, order book depth, rolling trade feed, and live WebSocket price ticks.
+![Live Market Monitor](docs/screenshots/live-market.png)
+*Displays: Live WebSocket stream (WS CONNECTED) streaming real-time prices for BTCUSDT ($64,937.26, 1,242 ticks) and ETHUSDT ($1,825.10, 1,004 ticks), incremental $O(1)$ technical indicators (RSI 64.61, ATR 117.7850, VaR 95%), responsive candlestick chart with moving averages and volume, and the coalesced trade feed.*
 
 ---
 
 ### 3. Market Analytics & Quantitative Research (`/analytics`)
 High-density quantitative research workbench for asset price dynamics, statistical return distributions, and risk profiling.
 ![Market Analytics](docs/screenshots/market-analytics.png)
-*Displays: Responsive HTML5 Canvas candlestick charting with moving average overlays, return distributions with higher moments ($\mu, \sigma, \text{Skewness}, \text{Kurtosis}$), rolling volatility (7d/14d/30d), and drawdown watermarks.*
+*Displays: Responsive HTML5 Canvas candlestick charting with locked height (no canvas stretching), Bollinger Bands, SMA/EMA overlays, volume histogram, and RSI (14) momentum oscillator across 150 historical 1-hour candles.*
 
 ---
 
 ### 4. Automated Data Quality & Medallion Lineage (`/quality`)
 The platform data integrity center auditing market partitions against 10 automated rules and rendering interactive dataset lineage.
 ![Data Quality and Lineage](docs/screenshots/quality-lineage.png)
-*Displays: 100% pass rate score across active asset suites, interactive Medallion Lineage DAG tracing Binance Public API → Bronze → Silver → Gold Marts → Features → Serving, and historical rule execution logs.*
+*Displays: 92.7% pass rate score across active asset suites, interactive Medallion Lineage DAG tracing Binance Public API → Bronze → Silver → Gold Marts → Features → Serving, and the lineage transformation edges ledger with record counts and UTC timestamps.*
 
 ---
 
-### 5. Pipeline Observatory & Orchestration (`/pipelines`)
-Task-level execution audit tracking stage transitions, execution durations, records processed, and live log output.
+### 5. Pipeline Observatory & Real-Time Processing Time (`/pipelines`)
+Task-level execution audit tracking stage transitions, execution durations, records processed, and the **Real-Time Data Pipeline Telemetry Flowchart**.
 ![Pipeline Observatory](docs/screenshots/pipelines.png)
-*Displays: Filterable pipeline run history (`medallion_full_sync`, `bronze_ingest`, `silver_validate`, `gold_marts`), stage durations, watermarks, and real-time execution logs.*
+*Displays: The 8-node Real-Time Data Flow Pipeline (`ws_ingest` → `normalize` → `bounded_queue` → `nats_broker` → `consumer_handle` → `incremental_analytics` → `ws_gateway` → `medallion_flush`), rolling p95 latency, inline processing sum (4.204 ms), background micro-batch flush time (170.55 ms), primary bottleneck analysis, and filterable historical pipeline runs.*
 
 ---
 
 ### 6. Multi-Horizon Prediction Studio (`/studio`)
 Point-in-time experimental machine learning inference studio with frozen cutoff timestamps, calibrated probabilities, and empirical confidence intervals.
 ![Prediction Studio](docs/screenshots/prediction-studio.png)
-*Displays: Asset pair selection, interval selection, multi-horizon forecast targets (1 to 24 steps ahead), and synchronous prediction generation.*
+*Displays: Asset pair selection (BTC/USDT), interval selection (1 Hour), multi-horizon forecast targets (1 to 24 steps ahead), and synchronous prediction generation.*
 
 ---
 
-### 7. Data Explorer & Schema Catalog (`/explorer`)
+### 7. Forecast History & Audit Ledger (`/history`)
+Audited immutable prediction ledger tracking all historical predictions, status transitions (`PENDING` vs `RECONCILED`), and realized error metrics against closed candle outcomes.
+![Forecast History](docs/screenshots/forecast-history.png)
+*Displays: 55 total forecasts generated, 46 reconciled against closed market candles, 37.0% directional hit rate, 0.34% mean percentage error, full audit trail (reference price, target, realized price, outcome, and status), and on-demand reconciliation trigger.*
+
+---
+
+### 8. Model Lab & Registry (`/models`)
+Walk-forward CV experiment leaderboard comparing model iterations (`Ridge`, `LogisticRegression`, `HistGradientBoosting`) against the naive persistence baseline, tracking hyperparameter sets and promotion gate compliance.
+![Model Lab](docs/screenshots/model-lab.png)
+*Displays: Model Lab & Observability, local database Model Registry status, chronological expanding walk-forward forecaster training form, registered model benchmark comparison (Candidate MAE vs Naive Baseline MAE), and MLflow experiment runs audit.*
+
+---
+
+### 9. Data Explorer & Schema Catalog (`/explorer`)
 Safe, read-only dataset exploration interface with schema contract dictionaries, partition watermarks, server-side pagination, and bounded CSV exports.
 ![Data Explorer](docs/screenshots/data-explorer.png)
-*Displays: Indexed records for Silver Validated Klines (362 records shown), column types, timestamps, volume, trade count, server-side page navigation, and export snapshot controls.*
+*Displays: Indexed records for Silver Validated Klines (722 records indexed), column types, timestamps, formatted prices ($64,927.21, $65,150.00), volume, trade counts, server-side page navigation (page 1 of 29), and CSV export snapshot controls.*
 
 ---
 
-### 8. System Health & Diagnostic Center (`/system`)
-Real-time infrastructure diagnostic center monitoring database connectivity, kline sync checkpoints, deterministic gap detection, and model registry state.
+### 10. System Health & Resource Observatory (`/system`)
+Real-time infrastructure diagnostic center monitoring process memory against configured budgets, CPU utilization, NATS JetStream lag, storage usage, and sync checkpoints.
 ![System Health](docs/screenshots/system-health.png)
-*Displays: Operational state (`OPERATIONAL`), total normalized stored candles (43,564), audited forecasts ledger, sync status per trading pair, and detected gap count (0 gaps / clean).*
-
----
-
-### 9. Forecast History & Audit Ledger (`/history`)
-Audited immutable prediction ledger tracking all historical predictions, status transitions (`PENDING` vs `RECONCILED`), and realized error metrics (MAE, RMSE, Directional Accuracy) against closed candle outcomes.
-
----
-
-### 10. Model Lab & Registry (`/models`)
-Walk-forward CV experiment leaderboard comparing model iterations (`Ridge`, `LogisticRegression`, `HistGradientBoosting`) against the naive persistence baseline, tracking hyperparameter sets and promotion gate compliance.
+*Displays: Operational state (`OPERATIONAL` under `LITE`), Process RSS memory (328.01 MB / 72.9% of 450 MB cap, CPU 8%), Host RAM free (878.7 MB), 19,158 stored candles, NATS JetStream broker messages (59,399), Medallion storage usage (Bronze 2.61MB, Silver 3.04MB, Gold 0.51MB, NATS 27.7MB, DB 6.98MB), and Checkpoints table.*
 
 ---
 

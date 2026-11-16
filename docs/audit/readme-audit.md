@@ -47,13 +47,14 @@ Inspected `frontend/src/App.tsx`, `frontend/src/views/`, and `frontend/src/compo
 | :--- | :--- | :--- | :--- | :--- |
 | **Data Operations** | `overview` | `DATA PLATFORM` | `frontend/src/views/DataOpsOverview.tsx` | [`docs/screenshots/overview.png`](../screenshots/overview.png) |
 | **Live Market** | `live` | `DATA PLATFORM` | `frontend/src/views/MarketOverview.tsx` | Visual ASCII + Telemetry Spec |
+| **Live Market** | `live` | `DATA PLATFORM` | `frontend/src/views/MarketOverview.tsx` | [`docs/screenshots/live-market.png`](../screenshots/live-market.png) |
 | **Pipelines** | `pipelines` | `DATA PLATFORM` | `frontend/src/views/PipelineObservatory.tsx` | [`docs/screenshots/pipelines.png`](../screenshots/pipelines.png) |
 | **Quality & Lineage** | `quality` | `DATA PLATFORM` | `frontend/src/views/DataQualityLineage.tsx` | [`docs/screenshots/quality-lineage.png`](../screenshots/quality-lineage.png) |
 | **Data Explorer** | `explorer` | `DATA PLATFORM` | `frontend/src/views/DataExplorer.tsx` | [`docs/screenshots/data-explorer.png`](../screenshots/data-explorer.png) |
 | **Market Analytics** | `analytics` | `INTELLIGENCE` | `frontend/src/views/MarketAnalytics.tsx` | [`docs/screenshots/market-analytics.png`](../screenshots/market-analytics.png) |
 | **Prediction Studio** | `studio` | `INTELLIGENCE` | `frontend/src/views/PredictionStudio.tsx` | [`docs/screenshots/prediction-studio.png`](../screenshots/prediction-studio.png) |
-| **Forecast History** | `history` | `INTELLIGENCE` | `frontend/src/views/ForecastHistory.tsx` | Verified view spec in README |
-| **Model Lab** | `models` | `INTELLIGENCE` | `frontend/src/views/ModelLab.tsx` | Verified view spec in README |
+| **Forecast History** | `history` | `INTELLIGENCE` | `frontend/src/views/ForecastHistory.tsx` | [`docs/screenshots/forecast-history.png`](../screenshots/forecast-history.png) |
+| **Model Lab** | `models` | `INTELLIGENCE` | `frontend/src/views/ModelLab.tsx` | [`docs/screenshots/model-lab.png`](../screenshots/model-lab.png) |
 | **System Health** | `system` | `OPERATIONS` | `frontend/src/views/SystemStatusView.tsx` | [`docs/screenshots/system-health.png`](../screenshots/system-health.png) |
 | **Tablet Viewport** | *(Responsive)* | *(All)* | `frontend/src/App.tsx` (Drawer) | [`docs/screenshots/tablet-responsive.png`](../screenshots/tablet-responsive.png) |
 
@@ -61,18 +62,21 @@ Inspected `frontend/src/App.tsx`, `frontend/src/views/`, and `frontend/src/compo
 
 ## 4. Screenshot Asset Inspection & Verification
 
-All screenshots in `docs/screenshots/` were inspected for dimensions, file sizes, visual legibility, and authenticity:
+All screenshots in `docs/screenshots/` were re-captured directly from the live running application (`v3.0.0` running via `run.bat` on `http://127.0.0.1:8000/`) using automated headless Chrome with full telemetry and zero mock data:
 
-| Image Path | Header Dimensions | File Size | Legibility & Content Verification | Action |
+| Image Path | Header Dimensions | File Size | Legibility & Verified Content | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| `docs/screenshots/overview.png` | 1424 × 805 | 125,218 bytes | High fidelity; captures live status, KPI cards, Medallion stage status, and workbenches. | Retained |
-| `docs/screenshots/pipelines.png` | 1920 × 953 | 130,362 bytes | Clean; shows 3 recorded pipeline runs, stage durations, and log inspection triggers. | Retained |
-| `docs/screenshots/quality-lineage.png` | 1920 × 953 | 158,369 bytes | Sharp; displays 100% pass score (10/10 rules) and 6-stage Medallion lineage DAG. | Retained |
-| `docs/screenshots/data-explorer.png` | 1920 × 953 | 211,778 bytes | Clear; Silver klines partition preview, 362 records, column dictionary, and export buttons. | Retained |
-| `docs/screenshots/market-analytics.png` | 1920 × 953 | 135,995 bytes | Accurate; dark financial canvas candlestick chart with moving average overlays. | Retained |
-| `docs/screenshots/prediction-studio.png` | 1920 × 953 | 97,366 bytes | Clear; shows inference parameters, multi-horizon selection, and generation controls. | Retained |
-| `docs/screenshots/system-health.png` | 1920 × 953 | 136,869 bytes | Sharp; OPERATIONAL status, 43,564 stored candles, 0 detected gaps across trading pairs. | Retained |
-| `docs/screenshots/tablet-responsive.png` | 752 × 805 | 65,973 bytes | Clean; verifies mobile/tablet collapsible navigation drawer and responsive cards. | Retained |
+| `docs/screenshots/overview.png` | 1920 × 1080 | 180,259 bytes | Real-time Medallion stage row counts (78k Bronze, 76k Silver, 1.4k Gold), 38/41 DQ SLA score, "Just now" sync freshness, and 6 orchestrator runs. | **Refreshed (Live)** |
+| `docs/screenshots/live-market.png` | 1920 × 1080 | 210,674 bytes | Live WebSocket stream (WS CONNECTED) streaming real-time prices for BTCUSDT ($64.9k, 1,242 ticks) and ETHUSDT ($1.8k, 1,004 ticks), incremental indicators, and live candle chart. | **New (Live)** |
+| `docs/screenshots/pipelines.png` | 1920 × 1080 | 194,383 bytes | Real-Time 8-Node Flow Pipeline (`ws_ingest` to `medallion_flush`), rolling p95 latency, inline sum (4.204 ms), background flush time (170.55 ms), and historical run logs. | **Refreshed (Live)** |
+| `docs/screenshots/quality-lineage.png` | 1920 × 1080 | 175,353 bytes | 92.7% pass rate (38/41 rules), Medallion lineage DAG, and complete transformation edges ledger (`stream_microbatch_upsert`, `inference_baseline_sma_14`, etc.). | **Refreshed (Live)** |
+| `docs/screenshots/data-explorer.png` | 1920 × 1080 | 191,307 bytes | Silver Validated Klines preview with 722 records indexed, explicit typed schema, formatted prices, timestamps, pagination (page 1 of 29), and CSV export button. | **Refreshed (Live)** |
+| `docs/screenshots/market-analytics.png` | 1920 × 1080 | 209,255 bytes | Fixed canvas height (zero vertical distortion), Bollinger Bands, Moving Averages, volume histogram, and RSI (14) indicator across 150 historical bars. | **Refreshed (Live)** |
+| `docs/screenshots/prediction-studio.png` | 1920 × 1080 | 77,203 bytes | Point-in-time multi-horizon machine learning inference studio with parameter selectors and prediction triggers. | **Refreshed (Live)** |
+| `docs/screenshots/forecast-history.png` | 1920 × 1080 | 186,229 bytes | 55 forecasts generated, 46 reconciled against closed candles, 37.0% directional hit rate, 0.34% mean percentage error, and full realization ledger. | **New (Live)** |
+| `docs/screenshots/model-lab.png` | 1920 × 1080 | 168,330 bytes | Model Lab & Observability, local database registry status, walk-forward training controls, candidate vs naive baseline MAE benchmark leaderboard, and hyperparameter audit. | **New (Live)** |
+| `docs/screenshots/system-health.png` | 1920 × 1080 | 171,405 bytes | OPERATIONAL state, 328.01 MB RSS (72.9% of 450 MB cap), 19,158 stored candles, NATS JetStream 59,399 msgs, Medallion storage breakdown, and Checkpoints table. | **Refreshed (Live)** |
+| `docs/screenshots/tablet-responsive.png` | 768 × 1024 | 56,264 bytes | Live Market Monitor rendered on 768px tablet viewport with live prices and responsive drawer. | **Refreshed (Live)** |
 
 ---
 

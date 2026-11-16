@@ -43,8 +43,27 @@ export type TabType =
   | 'models'
   | 'system';
 
+const VALID_TABS: TabType[] = [
+  'overview',
+  'live',
+  'pipelines',
+  'quality',
+  'explorer',
+  'analytics',
+  'studio',
+  'history',
+  'models',
+  'system'
+];
+
+const getTabFromHash = (): TabType => {
+  if (typeof window === 'undefined') return 'overview';
+  const hash = window.location.hash.replace(/^#\/?/, '').trim();
+  return VALID_TABS.includes(hash as TabType) ? (hash as TabType) : 'overview';
+};
+
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>(getTabFromHash);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [syncingQuick, setSyncingQuick] = useState<boolean>(false);
   const [systemState, setSystemState] = useState<{
@@ -105,7 +124,14 @@ export const App: React.FC = () => {
   useEffect(() => {
     checkStatus();
     const interval = setInterval(checkStatus, 30000);
-    return () => clearInterval(interval);
+    const onHashChange = () => {
+      setActiveTab(getTabFromHash());
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('hashchange', onHashChange);
+    };
   }, []);
 
   const handleQuickSync = async () => {
@@ -152,6 +178,7 @@ export const App: React.FC = () => {
   ];
 
   const handleTabSelect = (tab: TabType) => {
+    window.location.hash = tab;
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
