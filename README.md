@@ -1,403 +1,716 @@
 # Resource-Efficient Real-Time Financial Data Intelligence Platform (`v3.0.0`)
 
 [![CI Pipeline](https://github.com/DungTran1201/CryptocurrencyPriceAnalysis_Forecasting/actions/workflows/ci.yml/badge.svg)](https://github.com/DungTran1201/CryptocurrencyPriceAnalysis_Forecasting/actions/workflows/ci.yml)
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12](https://img.shields.io/badge/python-3.12.9-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
 [![NATS JetStream](https://img.shields.io/badge/NATS-JetStream%202.15-27AAE1.svg)](https://nats.io/)
 [![DuckDB](https://img.shields.io/badge/DuckDB-Parquet-FFF000.svg)](https://duckdb.org/)
-[![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://react.dev)
+[![React 18](https://img.shields.io/badge/React-18.3-61dafb.svg)](https://react.dev)
 [![TypeScript 5.6](https://img.shields.io/badge/TypeScript-5.6-3178c6.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A single-node, resource-efficient **Real-Time Streaming Data Lakehouse, Financial Analytics, and Experimental ML Forecasting Platform** engineered to run comfortably on an 8 GB RAM workstation (`lite`, `standard`, and `extended` execution profiles).
+> **A single-node, resource-aware Real-Time Streaming Data Lakehouse, Quantitative Risk Analytics, and Experimental ML Forecasting Platform engineered for commodity workstations.**
 
-The platform executes and monitors the end-to-end 3-plane streaming & batch data lifecycle:
-$$\text{Binance WS \& REST} \longrightarrow \text{NATS JetStream} \longrightarrow \text{Bronze (zstd JSONL)} \longrightarrow \text{Silver (Parquet + DQ)} \longrightarrow \text{Gold (DuckDB + Marts)} \longrightarrow \text{Incremental \& Batch Risk Analytics} \longrightarrow \text{Walk-Forward ML \& WS UI}$$
-
-Built with a Binance-inspired dark technical visual language (`#0B0E11` graphite surfaces with restrained `#FCD535` yellow active state), high information density, persistent categorized sidebar navigation across 10 interactive views, strict zero-leakage CPU ML validation, bounded backpressure-aware queues, and honest telemetry—never showing fake zeroes or fabricated production metrics.
+[Quick Start](#quick-start-windows) • [Visual Showcase](#visual-showcase--platform-walkthrough) • [Architecture](#architecture-overview) • [Data Lifecycle](#end-to-end-data-lifecycle) • [API Reference](#api-documentation--route-specifications) • [Benchmarks](#verification-benchmarking--testing-suite) • [Documentation](#documentation-navigation-matrix)
 
 ---
 
-## Visual Tour of the Platform (v2 Baseline UI + v3 Live Market & Governance Extensions)
+## Executive Summary & Architectural Motivation
 
-The following screenshots are captured directly from the live running application:
+Most cryptocurrency analytics and machine-learning repositories are toy Jupyter notebooks. They download static CSV files from public URLs, engineer features with future-leakage train/test splits, claim artificial 90%+ directional accuracies, and require heavy distributed clusters (Apache Spark, Apache Flink, Kafka, GPU servers) that overwhelm personal computers.
+
+This platform takes a **data-engineering-first approach**: a production-grade, single-node architecture designed to operate reliably on standard workstations (tested on 8 GB to 16 GB RAM). It manages the entire streaming and analytical data lifecycle—from raw WebSocket trade ingestion to columnar lakehouse storage, automated data quality scoring, incremental streaming analytics, and gated walk-forward machine learning.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 END-TO-END DATA LIFECYCLE                                    │
+│                                                                                             │
+│  Binance WS & REST ──► Bounded Queue ──► NATS JetStream ──► Bronze (zstd JSONL)             │
+│                                                                  │                          │
+│  WebSocket Gateway ◄── Incremental Analytics ◄── DuckDB Marts ◄──┴──► Silver (Parquet + DQ) │
+│           │                                      │                                          │
+│    10-View Dashboard ◄──────────────────── Walk-Forward ML ◄── Gold Feature Vectors         │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The system features an institutional Binance-inspired technical visual language (`#0B0E11` deep graphite surfaces, restrained `#FCD535` active accents, semantic `#2EBD85`/`#F6465D` market colors), persistent 10-view categorized sidebar navigation, zero lookahead leakage in CPU walk-forward validation, bounded backpressure-aware queues, and strict honest telemetry—**never showing fabricated zeroes or mock metrics**.
+
+---
+
+## Visual Showcase & Platform Walkthrough
+
+The platform user interface is built with **React 18**, **TypeScript 5.6**, **Tailwind CSS**, and **HTML5 Canvas**. The following screenshots are captured directly from the live running application:
 
 ### 1. Data Operations Overview (`/overview`)
-*Control-plane overview displaying live pipeline telemetry, the 6-stage Medallion Data Lifecycle DAG, KPI SLA adherence, and recent orchestration runs.*
+The primary operational cockpit displaying end-to-end pipeline health, Medallion stage watermarks, live SLA scorecard, candle freshness trackers, and immediate manual orchestration triggers.
 ![Data Operations Overview](docs/screenshots/overview.png)
+*Displays: Real-time telemetry across the Medallion lifecycle (Ingestion → Validation → Marts → Features → Models), recent orchestrator runs with duration, and active platform workbenches.*
 
-### 2. Market Analytics & Quantitative Research (`/analytics`)
-*High-density technical analytics featuring responsive HTML5 Canvas candlestick charting, SMA overlays, return distributions with higher moments ($\mu$, $\sigma$, Skewness, Kurtosis), rolling volatility, and drawdowns.*
+---
+
+### 2. Live Market Monitor & Real-Time Pipeline Flow (`/live`)
+Dedicated real-time market operations monitor featuring a live candlestick chart, order book depth, rolling trade feed, and the **Real-Time Data Pipeline Telemetry Flowchart**.
+```
+[N1: WS Ingest] ──► [N2: Normalize] ──► [N3: Bounded Queue] ──► [N4: NATS Broker]
+                                                                        │
+[N8: Medallion Flush] ◄── [N7: WS Gateway] ◄── [N6: Incr. Analytics] ◄──┴──► [N5: Consumer]
+```
+- **8-Node Execution Graph**: Traces `ws_ingest` → `normalize` → `bounded_queue` → `nats_broker` → `consumer_handle` → `incremental_analytics` → `ws_gateway` → `medallion_flush`.
+- **Latency Telemetry**: Calculates per-node rolling p95 latency, inline sub-pipeline sum (~2.0 ms), background micro-batch flush time (~78 ms), and automatically flags pipeline bottlenecks.
+- **WebSocket Broadcast**: Pushes coalesced real-time prices, depth, trade volume, and incremental technical indicators at 100 ms intervals.
+
+---
+
+### 3. Market Analytics & Quantitative Research (`/analytics`)
+High-density quantitative research workbench for asset price dynamics, statistical return distributions, and risk profiling.
 ![Market Analytics](docs/screenshots/market-analytics.png)
+*Displays: Responsive HTML5 Canvas candlestick charting with moving average overlays, return distributions with higher moments ($\mu, \sigma, \text{Skewness}, \text{Kurtosis}$), rolling volatility (7d/14d/30d), and drawdown watermarks.*
 
-### 3. Automated Data Quality & Lineage DAG (`/quality`)
-*Data quality engine scoring 10 automated schema, geometry, and continuity rules across Bronze, Silver, and Gold partitions, with interactive lineage DAG tracing upstream Binance sources to model serving.*
+---
+
+### 4. Automated Data Quality & Medallion Lineage (`/quality`)
+The platform data integrity center auditing market partitions against 10 automated rules and rendering interactive dataset lineage.
 ![Data Quality and Lineage](docs/screenshots/quality-lineage.png)
+*Displays: 100% pass rate score across active asset suites, interactive Medallion Lineage DAG tracing Binance Public API → Bronze → Silver → Gold Marts → Features → Serving, and historical rule execution logs.*
 
-### 4. Pipeline Observatory & Task Breakdown (`/pipelines`)
-*Task-level execution runner showing sequential execution stages (`ingest_bronze` → `validate_silver` → `build_gold_marts` → `extract_features`) with duration, record counts, and execution logs.*
+---
+
+### 5. Pipeline Observatory & Orchestration (`/pipelines`)
+Task-level execution audit tracking stage transitions, execution durations, records processed, and live log output.
 ![Pipeline Observatory](docs/screenshots/pipelines.png)
+*Displays: Filterable pipeline run history (`medallion_full_sync`, `bronze_ingest`, `silver_validate`, `gold_marts`), stage durations, watermarks, and real-time execution logs.*
 
-### 5. Multi-Horizon Prediction Studio (`/studio`)
-*Point-in-time multi-step forecast generation with frozen cutoff timestamps, calibrated directional probabilities, and empirical 95% confidence bands.*
+---
+
+### 6. Multi-Horizon Prediction Studio (`/studio`)
+Point-in-time experimental machine learning inference studio with frozen cutoff timestamps, calibrated probabilities, and empirical confidence intervals.
 ![Prediction Studio](docs/screenshots/prediction-studio.png)
+*Displays: Asset pair selection, interval selection, multi-horizon forecast targets (1 to 24 steps ahead), and synchronous prediction generation.*
 
-### 6. Data Explorer & Catalog (`/explorer`)
-*Safe, read-only dataset exploration with schema dictionaries, dataset profiling watermarks, server-side pagination, and bounded CSV data exports.*
+---
+
+### 7. Data Explorer & Schema Catalog (`/explorer`)
+Safe, read-only dataset exploration interface with schema contract dictionaries, partition watermarks, server-side pagination, and bounded CSV exports.
 ![Data Explorer](docs/screenshots/data-explorer.png)
+*Displays: Indexed records for Silver Validated Klines (362 records shown), column types, timestamps, volume, trade count, server-side page navigation, and export snapshot controls.*
 
-### 7. System Health & Diagnostic Center (`/system`)
-*Real-time diagnostics covering database connectivity, kline sync checkpoints, deterministic gap detection, and model serving status.*
+---
+
+### 8. System Health & Diagnostic Center (`/system`)
+Real-time infrastructure diagnostic center monitoring database connectivity, kline sync checkpoints, deterministic gap detection, and model registry state.
 ![System Health](docs/screenshots/system-health.png)
+*Displays: Operational state (`OPERATIONAL`), total normalized stored candles (43,564), audited forecasts ledger, sync status per trading pair, and detected gap count (0 gaps / clean).*
 
-### 8. Responsive Mobile & Tablet Drawer
-*Compact collapsible navigation drawer verified on mobile and tablet viewports (768px).*
+---
+
+### 9. Forecast History & Audit Ledger (`/history`)
+Audited immutable prediction ledger tracking all historical predictions, status transitions (`PENDING` vs `RECONCILED`), and realized error metrics (MAE, RMSE, Directional Accuracy) against closed candle outcomes.
+
+---
+
+### 10. Model Lab & Registry (`/models`)
+Walk-forward CV experiment leaderboard comparing model iterations (`Ridge`, `LogisticRegression`, `HistGradientBoosting`) against the naive persistence baseline, tracking hyperparameter sets and promotion gate compliance.
+
+---
+
+### 11. Responsive Mobile & Tablet Navigation
+Collapsible navigation drawer and responsive layout verified on 768px tablet and mobile viewports.
 ![Tablet Responsive Navigation](docs/screenshots/tablet-responsive.png)
+*Displays: Compact collapsible drawer maintaining full navigation access, status indicators, and operational controls on constrained viewports.*
 
 ---
 
-## Feature Summary & Implementation Status
+## Core Product Capabilities
 
-| Capability / Module | Status | Description |
+| Domain | Implemented Capability | Technical Realization |
 | :--- | :--- | :--- |
-| **Binance WS + REST Ingestion** | `Implemented` | Public `aggTrade` & `kline_1m` streams + idempotent REST backfill with backoff & gap-heal hooks. |
-| **NATS JetStream Broker** | `Implemented` | Durable single-node JetStream (`MARKET_EVENTS` + `MARKET_DLQ`), explicit ACK/NAK, replay & bounded backpressure. |
-| **Hybrid Medallion Lakehouse** | `Implemented` | Bronze `zstd` JSONL, Silver partitioned Parquet + SQLite WAL metadata, Gold DuckDB/Parquet marts & feature sets. |
-| **Catalog, Lineage & Retention** | `Implemented` | Persisted `data_catalog_entries`, `data_lineage_edges`, stream checkpoints, and automated disk retention pruning. |
-| **10 Data Quality SLA Rules** | `Implemented` | Programmatic checks for schema, OHLC geometry, nulls, monotonicity, gaps, spikes, and freshness. |
-| **Incremental & Batch Analytics** | `Implemented` | 15 metrics (Simple/Log Returns, SMA, EMA, RSI, MACD, BB, ATR14, VWAP, Vol 7/14/30, VaR/CVaR 95/99, MDD, Corr/Cov) with parity tests. |
-| **Data Explorer & CSV Export** | `Implemented` | Paginated inspection across Silver, Bronze, Gold marts, features, DQ logs, and forecast records + Data Catalog tab. |
-| **Experimental Walk-Forward ML** | `Implemented` | CPU-only `Ridge`, `LogisticRegression`, `HistGradientBoosting` + baselines with strict chronological CV gating ($\ge 1\%$ naive MAE improvement). |
-| **Coalesced WebSocket Gateway** | `Implemented` | Bounded per-client coalesced `/api/v1/ws/market` streaming live prices, incremental indicators & broker telemetry. |
-| **Observability & Profiles** | `Implemented` | Adaptive `lite`/`standard`/`extended` profiles, `/api/v1/system/resources` budget telemetry, and Prometheus `/metrics`. |
-| **Remote MLflow & Docker Stack** | `Optional` | Local SQLite/file Model Registry fallback when MLflow is unconfigured; Compose profiles validated for Docker deployments. |
+| **Data Engineering** | Public Binance WS & REST Ingestion | Real-time `aggTrade` & `kline_1m` streaming; REST backfill with exponential backoff & gap healing. |
+| | Durable Message Broker | Single-binary NATS JetStream 2.15 (`MARKET_EVENTS` stream, `MARKET_DLQ`, pull consumers). |
+| | Flow Control & Backpressure | Bounded queues with high-watermark flow control; zero silent event drops. |
+| **Data Platform** | Hybrid Medallion Lakehouse | **Bronze**: `zstd` compressed raw JSONL; **Silver**: Partitioned Parquet + SQLite WAL; **Gold**: DuckDB Parquet marts. |
+| | Automated Data Quality (DQ) | 10 programmatic rules auditing schema, OHLC geometry, monotonicity, freshness, and gaps. |
+| | Lineage & Catalog Governance | Persistent `data_catalog_entries`, `data_lineage_edges`, stream checkpoints, and automated retention pruning. |
+| **Financial Analytics** | Incremental Stream Processing | $O(1)$ rolling indicators (Returns, SMA, EMA, RSI, MACD, BB, VWAP, ATR14) updated per trade bar. |
+| | Quantitative Risk Metrics | Vectorized Historical & Parametric VaR/CVaR (95%/99%), Maximum Drawdown (MDD), Pearson Correlation/Covariance. |
+| **Machine Learning** | Leakage-Free Walk-Forward CV | Expanding-window cross-validation on chronological Gold feature sets; zero future data leakage. |
+| | Baseline-Gated Model Registry | Mandatory $\ge 1\%$ naive MAE improvement promotion gate; automatic fallback to persistence model. |
+| | Forecast Reconciliation | Automated background reconciliation of pending forecasts against closed candle actuals. |
+| **Application & Serving** | Coalesced WebSocket Gateway | Bounded per-client push `/api/v1/ws/market` delivering price ticks, depth, and indicators. |
+| | REST API & Open Standards | 38 HTTP REST routes, OpenAPI 3.1 Swagger UI (`/docs`), ReDoc (`/redoc`), and Prometheus `/metrics`. |
+| | Resource-Aware Profiles | `lite` (450 MB RAM budget), `standard` (950 MB), and `extended` (1800 MB) adaptive runtimes. |
 
 ---
 
-## Technology Stack & Architectural Roles
+## Architecture Overview
+
+The system is organized into three distinct operational planes designed to enforce single-node resource efficiency while maintaining strict separation of concerns:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                   APPLICATION PLANE (FastAPI + WS + React/Vite)            │
-│   • 10 Views incl. Live Market Monitor, Market Analytics, Observatory & Lab │
-│   • 38 HTTP REST Routes + Coalesced WS Gateway (/ws/market) + /metrics      │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ REST (JSON) & Coalesced WS Frames
-┌──────────────────────────────────────▼──────────────────────────────────────┐
-│                       STREAMING & INTELLIGENCE PLANE                        │
-│   • Binance WS (aggTrade, kline_1m) & REST -> Bounded Queue -> NATS JS      │
-│   • Durable Pull Consumers -> Incremental Rolling Engine -> CPU Walk-Forward│
-└──────────────┬───────────────────────┬───────────────────────┬──────────────┘
-               │                       │                       │
-┌──────────────▼──────────┐ ┌──────────▼──────────┐ ┌──────────▼──────────────┐
-│   BRONZE (zstd JSONL)   │ │  SILVER (Parquet)   │ │  GOLD (DuckDB/Parquet)  │
-│  • Immutable Raw Events │ │  • Validated OHLCV  │ │  • Financial/Risk Marts │
-│  • Local FS / S3 Stub   │ │  • 10 DQ SLA Rules  │ │  • ML Feature Vectors   │
-└──────────────┬──────────┘ └──────────┬──────────┘ └──────────┬──────────────┘
-               │                       │                       │
-┌──────────────▼───────────────────────▼───────────────────────▼──────────────┐
-│                 OPERATIONAL METADATA (SQLite WAL / PostgreSQL)              │
-│   • Alembic Migrations • symbols, klines, stream_checkpoints, catalog       │
-│   • pipeline_runs, data_quality_*, data_lineage_edges, forecasts, models    │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                APPLICATION PLANE (Presentation)                             │
+│   • React 18 + TypeScript 5.6 SPA (10 Accessible Navigation Views)                           │
+│   • HTML5 Canvas Financial Charting • Realtime Pipeline Flowchart • Responsive Drawer       │
+│   • Coalesced WebSocket Client • Server-Side Paginated Tables • Bounded CSV Snapshot Export │
+└──────────────────────────────────────────────┬──────────────────────────────────────────────┘
+                                               │ HTTP REST (JSON) & Coalesced WS Frames
+┌──────────────────────────────────────────────▼──────────────────────────────────────────────┐
+│                                  SERVING & CONTROL PLANE                                    │
+│   • FastAPI 0.115+ (38 REST Routes + /api/v1/ws/market WebSocket Gateway)                  │
+│   • Prometheus /metrics Text Exposition • Security Headers (nosniff, DENY, strict-origin)   │
+│   • Adaptive Resource Monitor (/api/v1/system/resources) • Profile Enforcement             │
+└──────────────────────┬───────────────────────────────────────────────┬──────────────────────┘
+                       │ Queries & Mutations                           │ Stream Subscriptions
+┌──────────────────────▼────────────────────────┐ ┌────────────────────▼──────────────────────┐
+│            DATA PLANE (Streaming & Storage)   │ │       INTELLIGENCE PLANE (Analytics & ML)  │
+│ • Binance Ingestion (WS & REST Backfill)      │ │ • O(1) Incremental Streaming Engine       │
+│ • Bounded Queue Flow Control (Watermarks)     │ │ • Vectorized Quantitative Risk Suite      │
+│ • NATS JetStream 2.15 (Durable Streams & DLQ) │ │ • Expanding Walk-Forward Chronological CV │
+│ • Bronze: zstd-compressed JSONL micro-batches │ │ • CPU Ridge, Logistic & HistGradientBoost │
+│ • Silver: Partitioned Parquet + 10 DQ Rules   │ │ • Baseline Gating & Fallback Engine       │
+│ • Gold: Analytical Marts & ML Feature Vectors │ │ • Matured Forecast Reconciler             │
+└──────────────────────┬────────────────────────┘ └────────────────────┬──────────────────────┘
+                       │                                               │
+┌──────────────────────▼───────────────────────────────────────────────▼──────────────────────┐
+│                            METADATA & STORAGE LAYER (Single Node)                           │
+│   • SQLite WAL (Async SQLAlchemy 2.0 / aiosqlite): symbols, klines, checkpoints, catalogs   │
+│   • DuckDB In-Memory Session: Fast zero-copy columnar analytical aggregations               │
+│   • Local File System: Partitioned Bronze, Silver, Gold, and Artifact directories           │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Streaming & Data Plane**:
-  - `Python 3.12.9`: Modern asynchronous runtime (`asyncio`, `websockets`, `httpx`).
-  - `NATS JetStream 2.15.3` (`nats-py`): Lightweight single-binary durable message broker (~22.6 MB RSS idle) with pull consumers and DLQ.
-  - `PyArrow`, `DuckDB`, `zstandard`, `orjson`: Columnar Silver/Gold Parquet storage, bounded analytical queries, and `zstd` compressed Bronze JSONL.
-  - `SQLAlchemy 2.0 (Async) + Alembic`: Metadata catalog, lineage, checkpoints, DQ logs, and forecasts (`aiosqlite` WAL / `asyncpg`).
-- **Analytics, ML & Serving**:
-  - `NumPy`, `Pandas`, `SciPy`, `scikit-learn`: Vectorized + O(1) incremental indicators, VaR/CVaR/MDD, and CPU walk-forward CV models.
-  - `FastAPI 0.115+`, `Pydantic v2`, `prometheus-client`: Typed API contracts, security headers, health probes, and `/metrics`.
-- **Frontend**:
-  - `React 18`, `TypeScript 5.6`, `Vite 6`, HTML5 Canvas API, `Lucide React`, and dedicated WebSocket hook (`useMarketStream.ts`).
+### High-Level Component Flow
+
+```mermaid
+flowchart TD
+    subgraph Sources["External Sources"]
+        B_WS["Binance Public WebSocket<br/>(aggTrade, kline_1m)"]
+        B_REST["Binance Public REST API<br/>(klines backfill)"]
+    end
+
+    subgraph DataPlane["Data Plane (Ingestion & Storage)"]
+        BQ["Bounded Ingest Queue<br/>(High-Watermark Control)"]
+        NATS[("NATS JetStream 2.15<br/>MARKET_EVENTS + DLQ")]
+        CONS["Durable Pull Consumers<br/>(Batch Flusher)"]
+        BRZ[("Bronze Layer<br/>data/bronze/**/*.jsonl.zst")]
+        SLV[("Silver Layer<br/>data/silver/**/*.parquet")]
+        DQ{"10 Data Quality<br/>SLA Rules"}
+        GLD[("Gold Marts<br/>data/gold/**/*.parquet")]
+    end
+
+    subgraph IntelligencePlane["Intelligence Plane"]
+        INC["Incremental Stream Engine<br/>(O(1) Rolling Indicators)"]
+        RISK["Quantitative Risk Suite<br/>(VaR, CVaR, MDD, Moments)"]
+        ML["Expanding Walk-Forward CV<br/>(CPU-Only ML Models)"]
+        GATE{"Baseline Gate<br/>MAE <= 0.99 * Naive"}
+    end
+
+    subgraph ApplicationPlane["Application & Serving Plane"]
+        API["FastAPI 0.115+<br/>38 REST Endpoints"]
+        WS_HUB["WebSocket Hub<br/>/api/v1/ws/market"]
+        UI["React 18 + TS Dashboard<br/>10 Integrated Views"]
+    end
+
+    B_WS --> BQ --> NATS
+    B_REST --> SLV
+    NATS --> CONS
+    CONS --> BRZ --> SLV --> DQ --> GLD
+    NATS --> INC --> WS_HUB
+    GLD --> RISK
+    GLD --> ML --> GATE
+    API --> UI
+    WS_HUB --> UI
+```
 
 ---
 
 ## End-to-End Data Lifecycle
 
-```mermaid
-flowchart LR
-    subgraph S1[Connectors]
-        WS[Binance Public WS]
-        REST[Binance REST API]
-    end
-
-    subgraph S2[Broker & Consumers]
-        NATS[(NATS JetStream)]
-        CONS[Durable Pull Consumer]
-    end
-
-    subgraph S3[Medallion Lakehouse]
-        BRZ[(Bronze zstd JSONL)]
-        SLV[(Silver Parquet + klines)]
-        DQ[10 Data Quality Rules]
-        GLD[(Gold DuckDB Parquet)]
-    end
-
-    subgraph S4[Governance & Intelligence]
-        CAT[(Catalog & Lineage)]
-        INC[Incremental + Batch Analytics]
-        CV[Walk-Forward CV & Gating]
-        REC[Forecast Ledger & Reconciler]
-    end
-
-    WS & REST --> NATS --> CONS
-    CONS --> BRZ --> SLV --> DQ --> GLD
-    GLD --> CAT & INC
-    GLD --> CV --> REC
-```
-
-1. **Real-Time & Batch Ingestion**: Consumes `aggTrade` + `kline_1m` over WebSocket and historical OHLCV batches over public Binance REST with automatic reconnect and gap recovery.
-2. **Bounded JetStream Buffering**: Enqueues normalized schema-versioned events via bounded queues (`high_watermark` flow control, zero silent drops) to NATS JetStream `MARKET_EVENTS` (and `MARKET_DLQ` for malformed/failing payloads).
-3. **Bronze Storage**: Micro-batches raw immutable event payloads to date-partitioned `data/bronze/**/*.jsonl.zst`.
-4. **Silver Validation & DQ**: Deduplicates and validates OHLC geometry into partitioned Parquet (`data/silver/...`) plus indexed SQLite WAL / PostgreSQL `klines` and runs the 10-rule Data Quality engine.
-5. **Gold DuckDB/Parquet Marts**: Materializes `gold_analytics_marts` and `gold_feature_sets` Parquet files queried lazily through memory-capped DuckDB sessions (`128MB` under `lite`).
-6. **Governance**: Persists dataset metadata in `data_catalog_entries`, transformation edges in `data_lineage_edges`, durable consumer offsets in `stream_checkpoints`, and enforces retention pruning.
-7. **Analytics & Gated ML**: Maintains real-time incremental indicator snapshots alongside batch analytics parity, and enforces $\ge 1\%$ naive MAE improvement before model promotion.
-8. **Serving & Reconciliation**: Broadcasts coalesced frames on `/api/v1/ws/market` and reconciles matured forecasts against closed market candles.
+1. **Ingestion & Normalization**: Connects to Binance public WebSockets (`aggTrade` and `kline_1m`) with automatic reconnection and exponential backoff. Incoming raw JSON payloads are normalized into canonical typed schemas (`CanonicalTradeEvent`, `CanonicalKlineEvent`).
+2. **Bounded JetStream Buffering**: Enqueues normalized events through bounded memory buffers. If downstream processing stalls, high-watermark flow control applies backpressure—preventing memory exhaustion without silent message loss. Messages publish to NATS JetStream stream `MARKET_EVENTS` (malformed payloads route to `MARKET_DLQ`).
+3. **Bronze Raw Storage**: A background micro-batch consumer pulls batches and writes raw immutable events to date-partitioned `data/bronze/{symbol}/{date}/events.jsonl.zst` using `zstandard` compression (~25x compression ratio).
+4. **Silver Cleanse & 10 DQ Rules**: De-duplicates records by `(symbol, timeframe, open_time)`, enforces strict OHLC geometry ($Low \le Open, Close \le High$), validates timestamps, and writes columnar Parquet partitions alongside indexed SQLite `klines`. The 10-rule Data Quality engine evaluates every partition.
+5. **Gold Marts & DuckDB Aggregations**: Materializes `data/gold/analytics_marts/` and `data/gold/feature_sets/` Parquet files. DuckDB queries these files via memory-bounded queries (`128MB` under `lite`) to compute historical rolling indicators and cross-asset correlations.
+6. **Incremental Real-Time Analytics**: An in-memory state tracker (`IncrementalSymbolState`) calculates real-time technical indicators ($O(1)$ complexity) for every incoming tick and bar, perfectly matching batch Pandas reference implementations.
+7. **Leakage-Free Machine Learning**: Trains CPU-efficient models (`Ridge`, `LogisticRegression`, `HistGradientBoosting`) using expanding walk-forward cross-validation. A candidate model is promoted **only** if its out-of-sample MAE improves upon the naive persistence baseline by at least 1.0%; otherwise, the platform safely falls back to the baseline.
+8. **Serving & Reconciliation**: Broadcasts coalesced price ticks and pipeline latency metrics over `/api/v1/ws/market`. When future candles close, a background reconciler scores pending forecasts against realized market prices and records realized MAE/RMSE.
 
 ---
 
 ## Data Quality Rules & SLAs
 
-Every market partition is continuously audited against 10 rigorous programmatic rules:
+Every market partition is scored against 10 automated programmatic rules. If critical rules fail, downstream pipeline promotion halts immediately:
 
 | Rule ID | Rule Name | Category | Severity | Failure Condition |
 | :--- | :--- | :--- | :--- | :--- |
-| **DQ-SCH-01** | Schema & Type Adherence | SCHEMA | CRITICAL | Column types differ from float/int/datetime |
-| **DQ-NUL-01** | Non-Null Prices & Timestamps | COMPLETENESS | CRITICAL | Null or NaN values detected in OHLCV columns |
-| **DQ-UNI-01** | Primary Key Uniqueness | INTEGRITY | CRITICAL | Duplicate `(symbol, timeframe, open_time)` |
-| **DQ-ORD-01** | Monotonic Ordering | CONSISTENCY | ERROR | Out-of-order timestamp sequence ($t_i \le t_{i-1}$) |
-| **DQ-GAP-01** | Interval Continuity | CONSISTENCY | WARNING | Gap exceeding $1.5\times$ expected timeframe delta |
-| **DQ-REL-01** | OHLC Price Geometry | INTEGRITY | CRITICAL | $High < Low$ or extremes fail to bound $Open / Close$ |
-| **DQ-VOL-01** | Non-Negative Volume | INTEGRITY | ERROR | Base or quote asset volume $< 0$ |
-| **DQ-FUT-01** | Timestamp Temporal Validity | CONSISTENCY | CRITICAL | Candle open timestamp exceeds current UTC time |
-| **DQ-OUT-01** | Extreme Price Spike Flag | ANOMALY | WARNING | Single-bar price change $> 35\%$ (flagged for review) |
-| **DQ-FRE-01** | Freshness SLA Adherence | COMPLETENESS | WARNING | Latest closed candle exceeds allowable delay window |
+| **DQ-SCH-01** | Schema & Type Adherence | SCHEMA | CRITICAL | Column types differ from float/int/datetime or required columns are missing. |
+| **DQ-NUL-01** | Non-Null Completeness | COMPLETENESS | CRITICAL | Null or NaN values detected in OHLCV columns. |
+| **DQ-UNI-01** | Primary Key Uniqueness | INTEGRITY | CRITICAL | Duplicate `(symbol, timeframe, open_time)` combinations found. |
+| **DQ-ORD-01** | Monotonic Ordering | CONSISTENCY | ERROR | Out-of-order timestamp sequence detected ($t_i \le t_{i-1}$). |
+| **DQ-GAP-01** | Interval Continuity | CONSISTENCY | WARNING | Timestamp delta between consecutive candles exceeds $1.5\times$ expected timeframe. |
+| **DQ-REL-01** | OHLC Price Geometry | INTEGRITY | CRITICAL | $High < Low$, $High < Open$, $High < Close$, $Low > Open$, or $Low > Close$. |
+| **DQ-VOL-01** | Non-Negative Volume | INTEGRITY | ERROR | Base or quote asset volume $< 0.0$. |
+| **DQ-FUT-01** | Temporal Validity | CONSISTENCY | CRITICAL | Candle open timestamp exceeds current UTC wall-clock time. |
+| **DQ-OUT-01** | Extreme Price Spike Flag | ANOMALY | WARNING | Single-candle price return $|r_t| > 35\%$ (flagged for review). |
+| **DQ-FRE-01** | Freshness SLA | COMPLETENESS | WARNING | Latest closed candle timestamp exceeds allowable SLA delay window. |
 
 ---
 
-## Prerequisites
+## Technology Stack
 
-| Tool / Runtime | Minimum Version | Tested Version | Purpose |
+| Layer | Technology | Version | Architectural Responsibility & Rationale |
 | :--- | :--- | :--- | :--- |
-| **Python** | `3.12.0` | `3.12.9` | Backend API, streaming consumers, DuckDB analytics, and ML engine |
-| **NATS Server** | `2.10.0+` | `2.15.3` | Single-node JetStream message broker (installed via `scripts/install_nats.ps1`) |
-| **Node.js** | `18.0.0` | `24.18.0` | Frontend TypeScript development and building |
-| **npm** | `9.0.0` | `11.16.0` | Frontend package manager |
-| **SQLite** | `3.35.0+` | Built-in | Default asynchronous WAL operational metadata database |
-| **PowerShell** | `5.1` / `7+` | `5.1` (Win10/11) | Primary validated development shell |
+| **Backend API** | [FastAPI](https://fastapi.tiangolo.com/) | `0.115.8` | High-performance async REST framework with auto-generated OpenAPI documentation. |
+| **Data Validation** | [Pydantic v2](https://docs.pydantic.dev/) | `2.10.6` | Strict contract validation, input sanitization, and response serialization. |
+| **Streaming Broker** | [NATS JetStream](https://nats.io/) | `2.15.3` | Single-binary durable message broker (~22 MB RSS idle) replacing heavy Kafka clusters. |
+| **Lakehouse Storage** | [PyArrow](https://arrow.apache.org/docs/python/) & [DuckDB](https://duckdb.org/) | `19.0.0` / `1.2.0` | Columnar Silver/Gold Parquet storage and bounded in-process SQL analytical queries. |
+| **Raw Compression** | [zstandard](https://github.com/indygreg/python-zstandard) | `0.23.0` | High-ratio zstd compression for raw Bronze JSONL micro-batch files. |
+| **Operational DB** | [SQLAlchemy](https://www.sqlalchemy.org/) & [aiosqlite](https://github.com/omnilib/aiosqlite) | `2.0.38` / `0.21.0` | Async WAL SQLite metadata engine storing symbols, klines, catalog, and lineage. |
+| **Database Migrations**| [Alembic](https://alembic.sqlalchemy.org/) | `1.14.1` | Version-controlled deterministic database schema migrations. |
+| **Quantitative ML** | [NumPy](https://numpy.org/), [Pandas](https://pandas.pydata.org/), [scikit-learn](https://scikit-learn.org/) | `2.2.3` / `2.2.3` / `1.6.1` | Vectorized risk analytics, technical indicators, and CPU walk-forward regression. |
+| **System Metrics** | [psutil](https://github.com/giampaolo/psutil) & [prometheus-client](https://github.com/prometheus/client_python) | `7.0.0` / `0.21.1` | Process RSS memory, CPU tracking, and standard Prometheus `/metrics` exposition. |
+| **Frontend Framework**| [React 18](https://react.dev/) | `18.3.1` | Component-driven user interface with responsive rendering and lifecycle management. |
+| **Language & Build** | [TypeScript](https://www.typescriptlang.org/) & [Vite](https://vitejs.dev/) | `5.6.3` / `6.2.0` | Strongly typed frontend compilation and sub-second production asset bundling. |
+| **Icons & Design** | [Lucide React](https://lucide.dev/) & [Tailwind CSS](https://tailwindcss.com/) | `0.468.0` / `3.4.17` | Clean financial iconography and responsive Binance-inspired graphite theme. |
 
 ---
 
-## Windows Setup & Run Guide
+## Repository Structure
 
-### Quick Start (Batch Scripts: `setup.bat` & `run.bat`)
-Run once to create `.venv` (Python 3.12+), install Python & frontend dependencies, install `.bin\nats-server.exe`, run Alembic migrations, and build `frontend\dist`:
+```
+CryptocurrencyPriceAnalysis_Forecasting/
+├── backend/                              # Core Python backend package
+│   └── app/
+│       ├── api/v1/                       # API v1 routes (38 REST endpoints + 1 WS hub)
+│       │   ├── analytics.py              # Quantitative returns, volatility, drawdowns, correlations
+│       │   ├── data_explorer.py          # Paginated dataset browser & CSV export
+│       │   ├── data_quality.py           # DQ scorecards, rule evaluator, and lineage DAG
+│       │   ├── forecast.py               # Point-in-time predictions and reconciliation
+│       │   ├── governance.py             # Data catalog, checkpoints, and retention pruning
+│       │   ├── market.py                 # Symbols, candlestick history, and REST sync
+│       │   ├── models.py                 # Walk-forward CV training and model registry
+│       │   ├── pipelines.py              # Medallion orchestrator and execution logs
+│       │   ├── streaming.py              # Streaming status, DLQ, flush, and /ws/market
+│       │   └── system.py                 # Health probes, sync state, and resource telemetry
+│       ├── core/                         # Config, async database, logging, and metrics
+│       ├── models/                       # SQLAlchemy models (symbols, klines, catalog, etc.)
+│       ├── schemas/                      # Pydantic v2 schemas and event contracts
+│       ├── services/                     # Business logic and domain service implementations
+│       ├── storage/                      # Bronze zstd, Silver Parquet, and Gold DuckDB managers
+│       └── streaming/                    # Binance WS, NATS broker, consumers, and telemetry
+├── frontend/                             # React 18 + TypeScript + Vite frontend
+│   ├── src/
+│   │   ├── components/                   # CandlestickChart, RealtimePipelineFlow, StatusBadge
+│   │   ├── services/                     # Typed Axios API client & WebSocket hooks
+│   │   ├── types/                        # TypeScript interfaces matching backend schemas
+│   │   └── views/                        # 10 accessible navigation views
+│   └── dist/                             # Compiled production bundle served directly by FastAPI
+├── ml/                                   # Financial analytics & machine learning engine
+│   ├── analytics.py                      # Vectorized indicators, returns, and risk metrics
+│   ├── incremental_analytics.py          # O(1) real-time streaming indicator state tracker
+│   ├── walk_forward.py                   # Chronological expanding CV with baseline gating
+│   └── registry.py                       # Local model registry with MLflow fallback
+├── docs/                                 # Architectural documentation and audit reports
+│   ├── 10-audit/                         # Hardware audit, resource budgets, performance reports
+│   ├── 20-requirements/                  # SRS and traceability matrix
+│   ├── 30-architecture/                  # Comprehensive architecture specifications
+│   ├── 40-adr/                           # Architectural Decision Records (ADR-001 through 005)
+│   ├── screenshots/                      # Verified UI screenshots
+│   └── audit/                            # Codebase audit & README verification report
+├── scripts/                              # Utility and launcher scripts
+│   ├── install_nats.ps1                  # Downloads & extracts NATS server into .bin/
+│   ├── start_nats.ps1                    # Starts local single-node NATS JetStream
+│   ├── start_lite.ps1                    # One-click PowerShell platform launcher
+│   └── benchmark_platform.py             # Resource and throughput benchmark runner
+├── docker/                               # Containerized deployment definitions
+│   ├── docker-compose.yml                # Multi-profile compose configuration
+│   ├── Dockerfile.backend                # Multi-stage Python 3.12 container
+│   └── Dockerfile.frontend               # Nginx frontend distribution container
+├── tests/                                # Comprehensive automated test suite (43 Pytest tests)
+├── setup.bat                             # One-click Windows setup script
+├── run.bat                               # One-click Windows launch and control script
+├── requirements.txt                      # Pinned Python backend dependencies
+└── README.md                             # Project presentation and documentation
+```
+
+---
+
+## Hardware & System Prerequisites
+
+| Requirement | Minimum Specification | Tested & Verified Environment | Notes |
+| :--- | :--- | :--- | :--- |
+| **Operating System** | Windows 10/11 (64-bit), Ubuntu 22.04+, or macOS 13+ | **Windows 10 Pro (x64)** | Validated in native PowerShell and CMD. |
+| **CPU Architecture** | 2 Physical Cores (x86_64 or ARM64) | **Intel Core i5-11400H (12 vCPUs)** | Single-node CPU training; no GPU required. |
+| **System Memory** | 4 GB RAM available | **16 GB RAM (System Peak RSS < 350 MB)** | Adaptive profiles fit 450 MB (`lite`) to 1800 MB (`extended`). |
+| **Free Disk Space** | 2 GB free storage | **50+ GB SSD (NVMe)** | Storage managed by automated retention pruning. |
+| **Python** | Python `3.12.0`+ | **Python `3.12.9`** | Must be added to system PATH. |
+| **Node.js & npm** | Node `18.0.0`+ / npm `9.0.0`+ | **Node `24.18.0` / npm `11.16.0`** | Required to build frontend assets. |
+| **Message Broker** | NATS Server `2.10`+ | **NATS Server `2.15.3`** | Automatically installed into `.bin/` by setup script. |
+| **Database** | SQLite `3.35`+ (built-in WAL mode) | **SQLite WAL (aiosqlite `0.21.0`)** | Default asynchronous local storage. |
+
+---
+
+## Quick Start (Windows)
+
+The repository provides two automated batch scripts for Windows developers: [`setup.bat`](setup.bat) and [`run.bat`](run.bat).
+
+### Step 1: Automated Installation (`setup.bat`)
+Open Command Prompt or PowerShell in the repository root and run:
 ```cmd
 setup.bat
 ```
-Then launch NATS JetStream + FastAPI + Live Streaming + Dashboard (defaults to `lite` profile on `http://127.0.0.1:8000/`):
-```cmd
-run.bat
-```
-*(Useful flags: `setup.bat --extended`, `run.bat --open`, `run.bat standard`, `run.bat --port 8080`, `run.bat --check`, `run.bat --stop`.)*
+`setup.bat` executes a 7-step preflight and configuration routine:
+1. Detects Python 3.12+ and checks system requirements.
+2. Creates `.venv` virtual environment.
+3. Upgrades `pip` and installs pinned dependencies from `requirements.txt`.
+4. Copies `.env.example` to `.env` (configured for profile `lite`).
+5. Downloads and extracts the `nats-server.exe` binary into `.bin\`.
+6. Executes Alembic database migrations (`alembic upgrade head`).
+7. Installs frontend dependencies and compiles production assets into `frontend\dist`.
+
+*(Flags: `setup.bat --extended` installs optional MinIO & Prometheus dependencies; `setup.bat --help` displays all flags.)*
 
 ---
 
-### Manual Step-by-Step PowerShell Setup & Run
+### Step 2: One-Click Startup (`run.bat`)
+To launch the entire platform:
+```cmd
+run.bat
+```
+`run.bat` automatically:
+- Verifies virtual environment and configuration.
+- Applies pending database migrations.
+- Starts NATS JetStream in the background (PID tracked in `.nats.pid`).
+- Launches FastAPI on **`http://127.0.0.1:8000/`** with the embedded streaming runtime and compiled dashboard.
 
-#### 1. Clone & Enter Repository
+**Useful Launcher Flags:**
+```cmd
+run.bat --open         :: Starts platform and automatically opens default browser
+run.bat standard       :: Launches with the STANDARD profile (950 MB budget)
+run.bat --port 8080    :: Starts backend on custom port 8080
+run.bat --check        :: Validates environment, port 8000, and NATS without starting
+run.bat --stop         :: Gracefully shuts down running NATS server and uvicorn processes
+```
+
+---
+
+## Manual Step-by-Step Setup (PowerShell)
+
+For Linux, macOS, or granular Windows developer control, execute the manual setup steps:
+
+### 1. Clone & Enter Repository
 ```powershell
 git clone https://github.com/DungTran1201/CryptocurrencyPriceAnalysis_Forecasting.git
 cd CryptocurrencyPriceAnalysis_Forecasting
 ```
 
-### 2. Configure Environment & Profile
-Copy `.env.example` to `.env` (defaults use `PLATFORM_PROFILE=lite`, SQLite WAL, and public Binance feeds):
+### 2. Configure Environment Variables
 ```powershell
 Copy-Item .env.example .env
 ```
+*(The default configuration sets `PLATFORM_PROFILE=lite`, `STREAM_ENABLED=true`, and connects to public Binance WebSocket feeds with zero API key requirements).*
 
-### 3. Setup Python Environment & Local NATS Binary
+### 3. Create Virtual Environment & Install Dependencies
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-
-# Install local single-binary NATS Server into .bin\nats-server.exe
-.\scripts\install_nats.ps1
 ```
 
-### 4. Apply Alembic Database Migrations
+### 4. Install Local Single-Binary NATS Broker
+```powershell
+.\scripts\install_nats.ps1
+```
+*(Extracts single-executable `nats-server.exe` into `.bin\`—no system-wide service installation needed).*
+
+### 5. Apply Database Migrations
 ```powershell
 $env:PYTHONPATH = "."
 .\.venv\Scripts\alembic.exe upgrade head
 ```
 
-### 5. Install Frontend Dependencies & Compile Bundle
+### 6. Build Frontend Production Assets
 ```powershell
 cd frontend
 npm install
 npm run build
 cd ..
 ```
-*`npm run build` outputs compiled assets into `frontend/dist`, served directly by FastAPI at `http://127.0.0.1:8000/`.*
+*Vite compiles the React application into `frontend/dist`, which FastAPI serves statically at `http://127.0.0.1:8000/`.*
 
-### 6. Start the Platform (`LITE` Profile)
-
-#### Option A: One-Step Helper (`NATS` + `FastAPI` + Streaming Runtime + Static UI)
+### 7. Launch Platform
 ```powershell
+# Option A: One-step launcher script
 .\scripts\start_lite.ps1
-```
 
-#### Option B: Manual Two-Terminal Startup (or Separate Worker Process)
-```powershell
-# Terminal 1: Start NATS JetStream
+# Option B: Manual uvicorn launch
 .\scripts\start_nats.ps1
-
-# Terminal 2: Start FastAPI + embedded streaming runtime & UI
 $env:PYTHONPATH = "."
 $env:PLATFORM_PROFILE = "lite"
 $env:STREAM_ENABLED = "true"
 $env:STREAM_EMBEDDED_IN_API = "true"
 .\.venv\Scripts\uvicorn.exe backend.app.main:app --host 127.0.0.1 --port 8000
 ```
-*Optional decoupled worker mode: set `$env:STREAM_EMBEDDED_IN_API = "false"` and run `.\.venv\Scripts\python.exe -m backend.app.workers.stream_worker` in a separate terminal.*
 
-Open your browser to **`http://127.0.0.1:8000/`** (live Swagger UI at `http://127.0.0.1:8000/docs`, Prometheus metrics at `http://127.0.0.1:8000/metrics`).
-
-*(For Docker Compose profiles `lite` / `standard` / `extended`, see `README_INSTALL.md` and `docker/docker-compose.yml`.)*
+Open **`http://127.0.0.1:8000/`** in your browser. Interactive Swagger API documentation is available at `http://127.0.0.1:8000/docs`.
 
 ---
 
-## Running Data Synchronization & Pipelines
+## Configuration & Adaptive Profiles
 
-Synchronize historical klines or trigger full Bronze -> Silver -> Gold pipelines using JSON payloads:
+The platform implements three resource profiles defined in [ADR-001](docs/40-adr/ADR-001-runtime-profiles-and-single-node-budget.md). Change the profile by setting `PLATFORM_PROFILE` in `.env`:
 
+| Parameter | Profile A (`lite`) | Profile B (`standard`) | Profile C (`extended`) |
+| :--- | :--- | :--- | :--- |
+| **Target Workstation** | 4–8 GB RAM Laptop | 8–16 GB RAM PC (Default) | 16+ GB RAM Workstation |
+| **Process Memory Budget** | **450 MB** | **950 MB** | **1800 MB** |
+| **Monitored Symbols** | `BTCUSDT` (1–2 pairs) | `BTCUSDT`, `ETHUSDT`, `SOLUSDT`, `BNBUSDT` | Up to 10 trading pairs |
+| **Ingest Buffer Watermark**| 2,000 events | 5,000 events | 20,000 events |
+| **Max Candlestick History**| 500 bars | 2,000 bars | 10,000 bars |
+| **DuckDB Memory Limit** | 128 MB | 256 MB | 512 MB |
+| **Streaming Runtime** | Embedded in FastAPI process | Decoupled background worker | Decoupled background worker |
+| **Object Storage** | Local File System | Local File System | Optional MinIO / S3 |
+| **Monitoring** | Internal `/metrics` + JSON | Internal `/metrics` + JSON | Optional Prometheus + Grafana |
+
+### Key Environment Variables (`.env`)
+
+| Variable | Default (`lite`) | Description |
+| :--- | :--- | :--- |
+| `PLATFORM_PROFILE` | `lite` | Active resource profile (`lite`, `standard`, `extended`). |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./data/crypto_market.db` | Async SQLAlchemy database connection string (WAL enabled). |
+| `DATA_ROOT_DIR` | `./data` | Directory root for Bronze, Silver, Gold, and model storage. |
+| `NATS_URL` | `nats://127.0.0.1:4222` | NATS JetStream connection URI. |
+| `STREAM_ENABLED` | `true` | Enables real-time streaming runtime. |
+| `STREAM_EMBEDDED_IN_API` | `true` | Runs WebSocket ingestor and pull consumers inside FastAPI process. |
+| `BINANCE_WS_URL` | `wss://stream.binance.com:9443/ws` | Public Binance streaming gateway (zero API key needed). |
+| `CORS_ORIGINS` | `["http://localhost:5173", "http://127.0.0.1:8000"]` | Permitted browser origins. |
+
+---
+
+## Practical Usage & CLI Runbook
+
+### 1. Synchronize Market Candles via REST
+Sync the latest 300 1-hour candles from Binance public REST API:
 ```powershell
-# Synchronize BTCUSDT 1h candles from Binance public REST API
-$syncBody = @{ symbol = "BTCUSDT"; timeframe = "1h"; limit = 500 } | ConvertTo-Json
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/market/sync" -Method POST -Body $syncBody -ContentType "application/json"
+$body = @{ symbol = "BTCUSDT"; timeframe = "1h"; limit = 300 } | ConvertTo-Json
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/market/sync" -Method POST -Body $body -ContentType "application/json"
+```
 
-# Trigger synchronous full Medallion pipeline (Bronze + Silver + DQ + Gold Marts & Features)
-$pipeBody = @{ pipeline_name = "medallion_full_sync"; symbol = "BTCUSDT"; timeframe = "1h"; sync_mode = "sync" } | ConvertTo-Json
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/pipelines/trigger" -Method POST -Body $pipeBody -ContentType "application/json"
+### 2. Trigger Full Medallion Pipeline Execution
+Execute the sequential data pipeline (`ingest_bronze` → `validate_silver` → `build_gold_marts` → `extract_features`):
+```powershell
+$pipe = @{ pipeline_name = "medallion_full_sync"; symbol = "BTCUSDT"; timeframe = "1h"; sync_mode = "sync" } | ConvertTo-Json
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/pipelines/trigger" -Method POST -Body $pipe -ContentType "application/json"
+```
+
+### 3. Evaluate Data Quality SLAs On-Demand
+Run all 10 automated data quality checks against the active dataset:
+```powershell
+$eval = @{ symbol = "BTCUSDT"; timeframe = "1h"; limit = 500 } | ConvertTo-Json
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/data-quality/evaluate" -Method POST -Body $eval -ContentType "application/json"
+```
+
+### 4. Generate Multi-Horizon Machine Learning Forecast
+Generate a point-in-time multi-step forecast (honors baseline gating):
+```powershell
+$pred = @{ symbol = "BTCUSDT"; timeframe = "1h"; horizon_steps = 6 } | ConvertTo-Json
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/forecasts/generate" -Method POST -Body $pred -ContentType "application/json"
+```
+
+### 5. Reconcile Closed Predictions
+Reconcile matured pending predictions against realized market prices:
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/forecasts/reconcile" -Method POST
+```
+
+### 6. Enforce Disk Retention Policies
+Prune aged Bronze micro-batches and Silver partitions exceeding configured retention windows:
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/governance/retention/run" -Method POST
 ```
 
 ---
 
 ## API Documentation & Route Specifications
 
-The backend exposes **38 HTTP REST routes**, **1 WebSocket gateway** (`/api/v1/ws/market`), plus root **Prometheus `/metrics`** and static SPA hosting. Interactive API documentation is available at:
-- **Swagger UI**: `http://127.0.0.1:8000/docs`
-- **ReDoc**: `http://127.0.0.1:8000/redoc`
+The backend exposes **38 HTTP REST routes**, **1 WebSocket streaming gateway**, and **1 Prometheus metrics endpoint**. Complete interactive schema documentation is generated automatically:
+- **Swagger UI**: [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs)
+- **ReDoc**: [`http://127.0.0.1:8000/redoc`](http://127.0.0.1:8000/redoc)
+- **OpenAPI Schema**: [`http://127.0.0.1:8000/openapi.json`](http://127.0.0.1:8000/openapi.json)
 
-### Complete Endpoint Reference
+### Complete Route Reference Table
 
 | Category | Method | Endpoint | Description |
 | :--- | :--- | :--- | :--- |
-| **System & Ops** | `GET` | `/api/v1/health` | Service liveness, version, and health probe |
-| | `GET` | `/api/v1/system/status` | Database connectivity, checkpoints, active profile, and sync state |
-| | `GET` | `/api/v1/system/resources` | Live process RSS MB, CPU %, host free RAM, per-layer disk MB, and budget limits |
-| | `GET` | `/metrics` | Prometheus text exposition format metrics |
-| **Streaming & WS** | `GET` | `/api/v1/streaming/status` | NATS JetStream lag, queue depth, backpressure state, and incremental symbol snapshots |
-| | `GET` | `/api/v1/streaming/dlq` | Inspect quarantined Dead-Letter Queue messages |
-| | `POST` | `/api/v1/streaming/flush` | Flush pending micro-batch buffers to Bronze/Silver storage |
-| | `POST` | `/api/v1/streaming/replay` | Replay messages from NATS JetStream by sequence/stream |
-| | `POST` | `/api/v1/streaming/simulate-disconnect` | Controlled WS disconnect probe to verify reconnect & gap-heal recovery |
-| | `WS` | `/api/v1/ws/market` | Coalesced real-time price, incremental indicator & pipeline health WebSocket feed |
-| **Governance** | `GET` | `/api/v1/governance/catalog` | Persistent Medallion Data Catalog entries and owners |
-| | `GET` | `/api/v1/governance/checkpoints` | Durable stream consumer checkpoints (`stream_checkpoints`) |
-| | `POST` | `/api/v1/governance/retention/run` | Execute Bronze/Silver/Gold retention pruning policy |
-| **Pipelines** | `GET` | `/api/v1/pipelines/overview` | Pipeline runs summary, success rate, duration |
-| | `GET` | `/api/v1/pipelines/runs` | Filterable list of historical pipeline runs |
-| | `GET` | `/api/v1/pipelines/runs/{run_id}` | Task stage breakdown, ingested rows, and execution logs |
-| | `POST` | `/api/v1/pipelines/trigger` | Trigger synchronous or asynchronous Medallion pipeline run |
-| **Data Quality** | `GET` | `/api/v1/data-quality/overview` | Overall quality pass rates and active rules summary |
-| | `GET` | `/api/v1/data-quality/lineage` | Persisted Medallion lineage DAG from `data_lineage_edges` |
-| | `GET` | `/api/v1/data-quality/runs` | Historical quality audit runs ledger |
-| | `GET` | `/api/v1/data-quality/runs/{run_id}` | Detailed rule results and violation samples |
-| | `POST` | `/api/v1/data-quality/evaluate` | Trigger on-demand quality evaluation on active symbol/timeframe |
-| **Data Explorer** | `GET` | `/api/v1/data-explorer/datasets` | Registered dataset catalog (`silver_klines`, `bronze_market_events`, Gold marts, etc.) |
-| | `GET` | `/api/v1/data-explorer/preview` | Paginated partition inspection with profile statistics |
-| | `GET` | `/api/v1/data-explorer/export` | Download bounded dataset partitions as CSV |
-| **Analytics** | `GET` | `/api/v1/analytics/returns` | Return distributions, moments, VaR/CVaR (95%/99%), ATR14, VWAP, and histogram |
-| | `GET` | `/api/v1/analytics/volatility` | Rolling annualized realized volatility (`7, 14, 30` periods) |
-| | `GET` | `/api/v1/analytics/drawdowns` | Cumulative peak series, drawdown %, and Maximum Drawdown |
-| | `GET` | `/api/v1/analytics/correlations` | Pairwise Pearson correlation & covariance matrices across assets |
-| | `GET` | `/api/v1/analytics/incremental` | Real-time O(1) incremental per-symbol indicator & risk state |
-| **Market** | `GET` | `/api/v1/market/symbols` | Supported cryptocurrency trading pairs and sync status |
-| | `GET` | `/api/v1/market/klines` | Validated OHLCV candlestick bars and technical indicators |
-| | `POST` | `/api/v1/market/sync` | Incremental candle synchronization from Binance REST API |
-| **Forecasts** | `GET` | `/api/v1/forecasts` | Paginated immutable forecast history ledger |
-| | `POST` | `/api/v1/forecasts/generate` | Generate multi-horizon price & direction prediction (honors baseline fallback) |
-| | `POST` | `/api/v1/forecasts/reconcile` | Reconcile matured pending forecasts against closed candle outcomes |
-| **Models** | `GET` | `/api/v1/models` | Registered models and walk-forward CV metrics |
-| | `GET` | `/api/v1/models/experiments` | Experiment runs, hyperparameters, and evaluation metrics |
-| | `GET` | `/api/v1/models/tracking-status` | Probe remote MLflow server vs `LOCAL_REGISTRY_FALLBACK` |
-| | `POST` | `/api/v1/models/train` | Execute CPU walk-forward CV with naive baseline gating |
+| **System & Ops** | `GET` | `/api/v1/health` | Liveness and readiness health check probe. |
+| | `GET` | `/api/v1/system/status` | Database connectivity, sync state, and checkpoint watermarks. |
+| | `GET` | `/api/v1/system/resources` | Live process RSS memory, CPU %, host free RAM, and budget limits. |
+| | `GET` | `/metrics` | Prometheus text exposition format metrics. |
+| **Streaming & WS** | `GET` | `/api/v1/streaming/status` | NATS JetStream lag, queue depth, backpressure state, and node latencies. |
+| | `GET` | `/api/v1/streaming/dlq` | Inspect quarantined Dead-Letter Queue events. |
+| | `POST` | `/api/v1/streaming/flush` | Manually flush pending micro-batch buffers to Bronze/Silver storage. |
+| | `POST` | `/api/v1/streaming/replay` | Replay historical events from NATS JetStream by sequence ID. |
+| | `POST` | `/api/v1/streaming/simulate-disconnect` | Controlled WS disconnect to verify automatic reconnect & gap healing. |
+| | `WS` | `/api/v1/ws/market` | Coalesced WebSocket stream for real-time prices, indicators & pipeline flow. |
+| **Governance** | `GET` | `/api/v1/governance/catalog` | Persistent Medallion Data Catalog entries and dataset owners. |
+| | `GET` | `/api/v1/governance/checkpoints` | Inspect durable stream consumer checkpoints (`stream_checkpoints`). |
+| | `POST` | `/api/v1/governance/retention/run` | Execute Bronze/Silver/Gold retention pruning policy. |
+| **Pipelines** | `GET` | `/api/v1/pipelines/overview` | Pipeline runs summary, success rate, and duration metrics. |
+| | `GET` | `/api/v1/pipelines/runs` | Filterable list of historical pipeline executions. |
+| | `GET` | `/api/v1/pipelines/runs/{run_id}` | Detailed task stage breakdown, record counts, and execution logs. |
+| | `POST` | `/api/v1/pipelines/trigger` | Trigger synchronous or asynchronous Medallion pipeline run. |
+| **Data Quality** | `GET` | `/api/v1/data-quality/overview` | Data quality scorecard, pass rates, and active rules overview. |
+| | `GET` | `/api/v1/data-quality/lineage` | Medallion lineage DAG derived from `data_lineage_edges`. |
+| | `GET` | `/api/v1/data-quality/runs` | Historical quality audit execution ledger. |
+| | `GET` | `/api/v1/data-quality/runs/{run_id}` | Detailed rule evaluation results and violation samples. |
+| | `POST` | `/api/v1/data-quality/evaluate` | Trigger on-demand quality evaluation on active symbol/timeframe. |
+| **Data Explorer** | `GET` | `/api/v1/data-explorer/datasets` | Registered datasets and schema contract dictionaries. |
+| | `GET` | `/api/v1/data-explorer/preview` | Paginated dataset inspection with profile statistics. |
+| | `GET` | `/api/v1/data-explorer/export` | Download bounded dataset partitions as CSV extracts. |
+| **Analytics** | `GET` | `/api/v1/analytics/returns` | Return distributions, moments ($\mu, \sigma, s, k$), VaR/CVaR, ATR14, VWAP, histogram. |
+| | `GET` | `/api/v1/analytics/volatility` | Rolling annualized realized volatility (7, 14, and 30-period windows). |
+| | `GET` | `/api/v1/analytics/drawdowns` | Cumulative peak series, drawdown percentages, and Maximum Drawdown (MDD). |
+| | `GET` | `/api/v1/analytics/correlations` | Pairwise Pearson correlation and covariance matrices across assets. |
+| | `GET` | `/api/v1/analytics/incremental` | Real-time $O(1)$ streaming per-symbol technical indicators and risk state. |
+| **Market** | `GET` | `/api/v1/market/symbols` | Supported cryptocurrency trading pairs and sync status. |
+| | `GET` | `/api/v1/market/klines` | Validated OHLCV candlestick bars and technical indicators. |
+| | `POST` | `/api/v1/market/sync` | Incremental candle synchronization from Binance REST API. |
+| **Forecasts** | `GET` | `/api/v1/forecasts` | Paginated immutable forecast history ledger. |
+| | `POST` | `/api/v1/forecasts/generate` | Multi-horizon price & direction prediction (honors baseline gating). |
+| | `POST` | `/api/v1/forecasts/reconcile` | Reconcile matured pending forecasts against closed candle outcomes. |
+| **Models** | `GET` | `/api/v1/models` | Registered models and walk-forward CV metrics. |
+| | `GET` | `/api/v1/models/experiments` | Experiment runs, hyperparameters, and evaluation metrics. |
+| | `GET` | `/api/v1/models/tracking-status` | Probe remote MLflow server vs `LOCAL_REGISTRY_FALLBACK`. |
+| | `POST` | `/api/v1/models/train` | Execute CPU walk-forward CV with naive baseline gating. |
 
 ---
 
 ## Verification, Benchmarking & Testing Suite
 
-All unit/integration tests run locally without external network calls (`InMemoryBroker` + isolated async SQLite fixtures), plus live NATS/Binance acceptance checks when connected:
+Every code modification is verified through automated backend tests, frontend type checks, and resource benchmarks:
 
+### 1. Backend Pytest Suite (43 Tests Passed)
+The backend test suite covers API response contracts, empty-candle schema edge cases, NATS JetStream integration, 10 DQ rules, incremental analytics parity, and security headers:
 ```powershell
-# 1. Backend Pytest Suite (contracts, DQ, Medallion, streaming, financial parity, security)
 $env:PYTHONPATH = "."
 $env:APP_ENV = "testing"
 .\.venv\Scripts\python.exe -m pytest tests/ -v
+```
+*Result: `43 passed in 8.18s` (0 failed, 0 skipped).*
 
-# 2. Resource & Latency Benchmark (LITE or STANDARD profile)
-.\.venv\Scripts\python.exe scripts\benchmark_platform.py --profile lite
-
-# 3. Frontend Unit Tests & Production Build
+### 2. Frontend Unit Tests & Production Build
+```powershell
 cd frontend
 npm test
 npm run build
 cd ..
 ```
+*Result: `5 passed in 196ms`, `tsc && vite build` built in 1.86s (`dist/assets/index-RriEwakT.js` 298.12 kB).*
+
+### 3. Resource & Throughput Benchmark
+Measures actual throughput and memory consumption across `lite` and `standard` profiles:
+```powershell
+$env:PYTHONPATH = "."
+.\.venv\Scripts\python.exe scripts\benchmark_platform.py --profile lite
+```
+
+**Verified Benchmark Measurements:**
+- **Streaming Throughput**: 29,400 to 36,800 events/sec processed through incremental analytics.
+- **NATS JetStream Latency**: Average publish latency 0.13 ms to 0.18 ms.
+- **Bronze Compression**: Raw JSONL compressed via `zstd` with a **20x to 25x ratio** (10 ms write latency).
+- **Silver Columnar Parquet**: Parquet write time 8.5 ms to 10.9 ms.
+- **DuckDB Analytical Query**: Columnar aggregation across 500 candles completed in 38 ms to 53 ms.
+- **System Memory Footprint**: Process RSS 201 MB idle, peaking at ~232 MB during heavy streaming.
 
 ---
 
 ## Troubleshooting Guide
 
-| Issue / Symptom | Root Cause | Solution |
+| Issue / Symptom | Root Cause | Verified Solution |
 | :--- | :--- | :--- |
-| `ModuleNotFoundError: No module named 'backend'` | Python cannot locate package root | Set `$env:PYTHONPATH = "."` in PowerShell before running `uvicorn` or `pytest`. |
-| `Port 8000 already in use` | Another process is holding port 8000 | Find and terminate: `Get-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess \| Stop-Process` or use `--port 8080`. |
-| Missing or stale market data | Fresh installation without synced candles | Send JSON `{"symbol": "BTCUSDT", "timeframe": "1h", "limit": 500}` to `POST /api/v1/market/sync` or trigger a pipeline from the UI. UI displays unavailable state rather than fake zeroes. |
-| NATS JetStream unavailable | Local `nats-server.exe` not running | Run `.\scripts\install_nats.ps1` once, then start with `.\scripts\start_nats.ps1` (or launch everything with `.\scripts\start_lite.ps1`). |
-| Binance rate limit error (HTTP 429) | Exceeded public request limits | Backoff is automatic. The application retries with exponential backoff up to 5 times. Alternatively, wait 60 seconds. |
-| Database table missing error | Migrations not applied | Run `$env:PYTHONPATH = "."; .\.venv\Scripts\alembic.exe upgrade head`. |
-| CORS origin blocked in frontend dev | Port 5173 not permitted | Ensure `http://localhost:5173` is present in `CORS_ORIGINS` in `.env` (it is enabled by default). |
+| `ModuleNotFoundError: No module named 'backend'` | Python cannot locate package root | Set `$env:PYTHONPATH = "."` in PowerShell (or use `run.bat` which configures this automatically). |
+| `Port 8000 already in use` | Another process is holding port 8000 | Terminate the process: `run.bat --stop` or run on an alternate port: `run.bat --port 8080`. |
+| Missing or stale market candles | Fresh installation without synced data | Send a sync request via `POST /api/v1/market/sync` or click **Quick Sync BTC** in the dashboard header. |
+| NATS JetStream connection error | `nats-server.exe` is not running | Run `.\scripts\install_nats.ps1` once, then launch NATS via `run.bat` or `.\scripts\start_nats.ps1`. |
+| Binance HTTP 429 (Rate Limit) | Exceeded public request limits | The platform automatically applies exponential backoff up to 5 times. Wait 60 seconds for limits to reset. |
+| Missing database table error | Migrations not applied | Run `$env:PYTHONPATH = "."; .\.venv\Scripts\alembic.exe upgrade head`. |
+| Vite dev CORS blocked | Development port 5173 unlisted | Ensure `http://localhost:5173` is present in `CORS_ORIGINS` in `.env` (included by default). |
 
 ---
 
-## Limitations & Disclaimer
+## Implementation Status & Gating Policy
 
-> [!IMPORTANT]
-> **Experimental Research Platform**: The predictive models and forecasting outputs provided by this software are for computational and exploratory research purposes only. Cryptocurrency markets are highly volatile and influenced by macroeconomic, regulatory, and systemic factors.
-> 
-> **No Financial Advice**: Nothing in this repository constitutes financial, investment, or trading advice. Past performance or backtested walk-forward metrics do not guarantee future returns. The authors and maintainers assume no liability for financial losses incurred through the use of this software.
+| Capability | Status | Implementation Truth & Gating Rule |
+| :--- | :--- | :--- |
+| **Real-Time Streaming** | `Verified` | Binance WebSocket → Bounded Queue → NATS JetStream 2.15 → Incremental state. |
+| **Medallion Architecture** | `Verified` | Bronze zstd JSONL, Silver Parquet + indexed SQLite klines, Gold DuckDB Parquet marts. |
+| **Data Quality Engine** | `Verified` | 10 automated rules; evaluation scores partitions and stores results in `data_quality_runs`. |
+| **Pipeline Observatory** | `Verified` | Orchestrator logs task transitions and durations in `pipeline_runs` and `pipeline_tasks`. |
+| **Data Explorer & Export** | `Verified` | Paginated exploration of Silver/Gold/Bronze datasets with bounded CSV snapshot downloads. |
+| **Financial Analytics** | `Verified` | Vectorized risk suite (VaR, CVaR, MDD) and $O(1)$ streaming indicator state matching batch parity. |
+| **Walk-Forward ML** | `Experimental` | CPU-only `Ridge`, `LogisticRegression`, and `HistGradientBoosting`. **Promotion Gate**: Candidate model MUST achieve $\text{MAE} \le 0.99 \times \text{MAE}_{\text{naive}}$; otherwise system safely defaults to persistence baseline. |
+| **Remote MLflow Tracking** | `Optional` | Connects to remote MLflow when `MLFLOW_TRACKING_URI` is provided; automatically uses local SQLite registry fallback when unconfigured. |
+| **Distributed Orchestration** | `Excluded` | Apache Spark, Apache Flink, and Kubernetes are deliberately excluded to honor single-node workstation resource budgets. |
 
 ---
 
-## Reference & Attribution
+## Documentation Navigation Matrix
 
-- **Binance Public Market Data**: Provided via public REST API endpoints (`data-api.binance.vision`).
-- **Design References**:
-  - `DungTran1201/AgentHarnessBuilderTools`: Persistent category sidebar layout, telemetry topbar, and status badges.
-  - `Binance Official Visual Language`: Deep graphite surfaces (`#0B0E11`, `#181A20`), restrained yellow primary action token (`#FCD535`), semantic market colors (`#2EBD85` Buy, `#F6465D` Sell).
-  - `IBM Carbon Design System`: Enterprise data visualization hierarchy and quantitative dashboard blocks.
+The repository includes detailed technical architecture and engineering reports:
+
+| Document | Path | Scope & Subject Matter |
+| :--- | :--- | :--- |
+| **System Architecture** | [`docs/30-architecture/system-architecture.md`](docs/30-architecture/system-architecture.md) | Comprehensive 3-plane architecture specification and data contracts. |
+| **Data Flow Specification** | [`docs/architecture/data-flow.md`](docs/architecture/data-flow.md) | In-depth stage-by-stage data transformation mechanics. |
+| **Software Requirements (SRS)**| [`docs/20-requirements/srs.md`](docs/20-requirements/srs.md) | Functional and non-functional requirements and acceptance criteria. |
+| **Hardware Capability Audit** | [`docs/10-audit/hardware-capability-report.md`](docs/10-audit/hardware-capability-report.md) | Machine inspection, CPU/RAM limits, and hardware-aware constraints. |
+| **Resource Budget Spec** | [`docs/10-audit/resource-budget.md`](docs/10-audit/resource-budget.md) | Quantified memory and CPU budgets for `lite`, `standard`, and `extended`. |
+| **Performance Benchmark** | [`docs/10-audit/final-performance-report.md`](docs/10-audit/final-performance-report.md) | Throughput, compression, and latency benchmark results. |
+| **Known Limitations** | [`docs/10-audit/known-limitations.md`](docs/10-audit/known-limitations.md) | Transparent engineering audit of current platform boundaries. |
+| **Architectural Decisions** | [`docs/40-adr/`](docs/40-adr/) | ADR-001 (Profiles), ADR-002 (NATS), ADR-003 (Storage), ADR-004 (Streaming), ADR-005 (ML). |
+| **Design System Guide** | [`docs/design/design-system.md`](docs/design/design-system.md) | Color tokens, typography, component hierarchies, and dark mode rules. |
+| **Codebase Audit** | [`docs/audit/codebase-audit.md`](docs/audit/codebase-audit.md) | Static analysis, security audit, and response contract compliance. |
+| **README Verification Audit** | [`docs/audit/readme-audit.md`](docs/audit/readme-audit.md) | Verification matrix against acceptance criteria RD-01 through RD-18. |
+
+---
+
+## Future Development Roadmap
+
+- [x] **v1.0.0**: Basic REST market data synchronization and historical candlestick charting.
+- [x] **v2.0.0**: Institutional Binance design system, 10-view frontend dashboard, and responsive canvas charts.
+- [x] **v3.0.0**: Real-Time Streaming Data Lakehouse:
+  - Single-node NATS JetStream 2.15 durable broker integration.
+  - Hybrid Medallion Architecture (Bronze zstd, Silver Parquet, Gold DuckDB marts).
+  - 10 automated Data Quality SLA rules and dataset lineage graph.
+  - $O(1)$ real-time streaming indicator calculation and WebSocket broadcasting.
+  - Real-Time Data Pipeline Telemetry Flowchart with per-node latency monitoring.
+  - Leakage-free expanding walk-forward cross-validation with baseline gating.
+  - Automated Windows `setup.bat` and `run.bat` deployment scripts.
+- [ ] **v3.1.0** *(Planned)*: Automated historical gap backfilling daemon using Binance monthly archive archives.
+- [ ] **v3.2.0** *(Planned)*: Support for multi-exchange market feeds (Coinbase, OKX, Kraken) into canonical event schemas.
+- [ ] **v3.3.0** *(Planned)*: Extended backtesting engine for quantitative volatility arbitrage strategies.
+
+---
+
+## References & Attribution
+
+- **Public Market Data**: Provided via public REST and WebSocket endpoints by [Binance Vision](https://data-api.binance.vision).
+- **Design Tokens**:
+  - `Binance Official Visual Language`: Deep graphite background surfaces (`#0B0E11`, `#181A20`), restrained primary yellow action token (`#FCD535`), semantic market colors (`#2EBD85` Buy, `#F6465D` Sell).
+  - `IBM Carbon Design System`: Enterprise data visualization hierarchy and quantitative dashboard block layouts.
   - `Ant Design & shadcn/ui`: High-density tables, status badge typography, and shimmer loading skeletons.
 
 ---
 
-## License
+## License & Regulatory Disclaimer
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for complete details.
+This software is released under the **[MIT License](LICENSE)**.
+
+```
+Copyright (c) 2026 Dũng Trần
+```
+
+> [!IMPORTANT]
+> **Strict Financial & Research Disclaimer**:
+> This platform is engineered strictly for computational computer science, data engineering, and quantitative financial research purposes. Cryptocurrency markets are extraordinarily volatile, speculative, and susceptible to macroeconomic and systemic disruptions.
+> 
+> Nothing contained in this codebase, documentation, or user interface constitutes financial, investment, legal, tax, or trading advice. Model predictions and statistical indicators are experimental and carry zero guarantees of future accuracy or profitability. The author, contributors, and maintainers assume no liability for financial losses, capital impairment, or trading decisions made using this software.
