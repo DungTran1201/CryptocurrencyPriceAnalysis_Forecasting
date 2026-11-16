@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import random
+import time
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 import websockets
 
@@ -18,6 +19,7 @@ from backend.app.streaming.normalizer import (
     subject_for_event,
 )
 from backend.app.streaming.producer import BoundedEventProducer
+from backend.app.streaming.telemetry import PipelineTelemetryTracker
 
 logger = get_logger("BinanceWSIngestor")
 
@@ -46,11 +48,13 @@ class BinanceWebSocketIngestor:
         symbols: Optional[List[str]] = None,
         streams: Optional[List[str]] = None,
         on_reconnect_gap_heal: Optional[Callable[[], Awaitable[None]]] = None,
+        telemetry: Optional[PipelineTelemetryTracker] = None,
     ):
         self.producer = producer
         self.symbols = [s.upper() for s in (symbols or settings.streaming.symbols)]
         self.streams = list(streams or settings.streaming.streams)
         self.on_reconnect_gap_heal = on_reconnect_gap_heal
+        self.telemetry = telemetry
 
         self._running = False
         self._task: Optional[asyncio.Task] = None
@@ -132,7 +136,7 @@ class BinanceWebSocketIngestor:
                 ) as ws:
                     self._ws = ws
                     self.connected = True
-                    self.active_endpoint = url.split("/stream")[0]
+                    self.active_endpoint = url.split("/stream?")[0]
                     self.last_error = None
                     backoff = settings.streaming.reconnect_min_sec
 
@@ -144,20 +148,37 @@ class BinanceWebSocketIngestor:
                     async for raw_frame in ws:
                         if not self._running:
                             break
+                        t_rx0 = time.perf_counter()
                         ing_ts = datetime.now(timezone.utc).replace(tzinfo=None)
                         try:
                             raw_dict = json.loads(raw_frame)
+                        except json.JSONDecodeError as json_exc:
+                            if self.telemetry:
+                                self.telemetry.record_stage_error("ws_ingest")
+                            await self._record_malformed(str(raw_frame), str(json_exc))
+                            continue
+                        t_rx1 = time.perf_counter()
+                        if self.telemetry:
+                            self.telemetry.record_stage("ws_ingest", (t_rx1 - t_rx0) * 1000.0)
+
+                        t_norm0 = time.perf_counter()
+                        try:
                             event = normalize_binance_ws_payload(raw_dict, ingestion_time=ing_ts)
-                        except (json.JSONDecodeError, NormalizationError) as norm_exc:
+                            subject = subject_for_event(event)
+                            payload_bytes = event.model_dump_json().encode("utf-8")
+                        except NormalizationError as norm_exc:
+                            if self.telemetry:
+                                self.telemetry.record_stage_error("normalize")
                             await self._record_malformed(str(raw_frame), str(norm_exc))
                             continue
+                        t_norm1 = time.perf_counter()
+                        if self.telemetry:
+                            self.telemetry.record_stage("normalize", (t_norm1 - t_norm0) * 1000.0)
 
                         self.received_count += 1
                         self.last_event_time = ing_ts
                         EVENTS_RECEIVED.labels(stream=event.event_type, symbol=event.symbol).inc()
 
-                        subject = subject_for_event(event)
-                        payload_bytes = event.model_dump_json().encode("utf-8")
                         await self.producer.enqueue(
                             subject=subject,
                             payload=payload_bytes,

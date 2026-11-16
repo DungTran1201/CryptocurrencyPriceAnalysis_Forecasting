@@ -21,6 +21,8 @@ from backend.app.streaming.normalizer import (
     subject_for_event,
 )
 from backend.app.streaming.producer import BoundedEventProducer
+from backend.app.streaming.runtime import StreamPlatformRuntime
+from backend.app.streaming.telemetry import PipelineTelemetryTracker
 from backend.app.streaming.ws_hub import WSBroadcastHub
 from backend.app.models.governance import DeadLetterEvent, StreamCheckpoint
 from backend.app.models.market import Kline, Symbol
@@ -257,3 +259,62 @@ async def test_ws_hub_coalescing_bounded_buffer():
     latest = json.loads(q.get_nowait())
     assert latest["symbols"]["BTCUSDT"]["live_price"] == 60099.0
     await hub.stop()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_telemetry_per_node_and_totals_calculation():
+    """Verify per-node latency tracking, empty nullability, inline totals sum, and runtime snapshot."""
+    tracker = PipelineTelemetryTracker(window_size=16)
+
+    # Empty state: must return None (never fake zeroes) for unmeasured latencies
+    empty_snap = tracker.build_snapshot(
+        ws_connected=False,
+        broker_connected=False,
+        backpressure_active=False,
+        streaming_enabled=True,
+    )
+    assert len(empty_snap["nodes"]) == 8
+    assert empty_snap["totals"]["total_inline_avg_ms"] is None
+    assert empty_snap["totals"]["medallion_flush_avg_ms"] is None
+    assert empty_snap["totals"]["bottleneck_node_id"] is None
+
+    # Record deterministic stage durations
+    tracker.record_stage("ws_ingest", 0.4)
+    tracker.record_stage("normalize", 0.6)
+    tracker.record_stage("bounded_queue", 0.2)
+    tracker.record_stage("nats_broker", 2.5)
+    tracker.record_stage("consumer_handle", 0.8)
+    tracker.record_stage("incremental_analytics", 0.3)
+    tracker.record_stage("ws_gateway", 0.2)
+    tracker.record_stage("medallion_flush", 12.0)
+    tracker.record_e2e_wall(5.4)
+
+    snap = tracker.build_snapshot(
+        ws_connected=True,
+        broker_connected=True,
+        backpressure_active=False,
+        streaming_enabled=True,
+        node_meta={"nats_broker": {"messages": 1}},
+    )
+    totals = snap["totals"]
+    assert totals["active_inline_nodes"] == 7
+    assert totals["total_inline_avg_ms"] == pytest.approx(5.0, rel=1e-3)
+    assert totals["medallion_flush_avg_ms"] == pytest.approx(12.0, rel=1e-3)
+    assert totals["total_with_flush_avg_ms"] == pytest.approx(17.0, rel=1e-3)
+    assert totals["e2e_wall_avg_ms"] == pytest.approx(5.4, rel=1e-3)
+    assert totals["bottleneck_node_id"] == "nats_broker"
+
+    inline_shares = [
+        n["share_of_inline_pct"]
+        for n in snap["nodes"]
+        if n["execution_mode"] == "inline" and n["share_of_inline_pct"] is not None
+    ]
+    assert sum(inline_shares) == pytest.approx(100.0, abs=0.5)
+
+    # Runtime status_snapshot always exposes valid pipeline_flow contract
+    rt = StreamPlatformRuntime(broker=InMemoryBroker())
+    status = await rt.status_snapshot()
+    assert "pipeline_flow" in status
+    assert len(status["pipeline_flow"]["nodes"]) == 8
+    assert "totals" in status["pipeline_flow"]
+

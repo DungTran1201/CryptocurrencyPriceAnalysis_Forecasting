@@ -8,6 +8,7 @@ from fastapi import WebSocket
 
 from backend.app.core.config import settings
 from backend.app.core.logging import get_logger
+from backend.app.streaming.telemetry import PipelineTelemetryTracker
 
 logger = get_logger("WSBroadcastHub")
 
@@ -15,8 +16,13 @@ logger = get_logger("WSBroadcastHub")
 class WSBroadcastHub:
     """Coalesces high-frequency market/analytics updates before pushing to browser clients."""
 
-    def __init__(self, coalesce_interval_ms: int | None = None):
+    def __init__(
+        self,
+        coalesce_interval_ms: int | None = None,
+        telemetry: PipelineTelemetryTracker | None = None,
+    ):
         self.coalesce_interval_sec = (coalesce_interval_ms or settings.resources.ws_coalesce_interval_ms) / 1000.0
+        self.telemetry = telemetry
         self._clients: Dict[WebSocket, asyncio.Queue] = {}
         self._pending_symbols: Dict[str, Dict[str, Any]] = {}
         self._pending_system: Dict[str, Any] = {}
@@ -93,6 +99,7 @@ class WSBroadcastHub:
             if not self._dirty or not self._clients:
                 continue
             self._dirty = False
+            t_ws0 = time.perf_counter()
             msg = json.dumps({
                 "type": "tick_batch",
                 "ts_ms": int(time.time() * 1000),
@@ -101,6 +108,8 @@ class WSBroadcastHub:
             }, default=str)
             for q in list(self._clients.values()):
                 await self._enqueue_client(q, msg)
+            if self.telemetry:
+                self.telemetry.record_stage("ws_gateway", (time.perf_counter() - t_ws0) * 1000.0)
 
     @property
     def client_count(self) -> int:

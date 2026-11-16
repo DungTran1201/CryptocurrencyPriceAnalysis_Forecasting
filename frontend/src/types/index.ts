@@ -200,6 +200,49 @@ export interface IncrementalAnalyticsSnapshot {
   max_drawdown_pct: number;
 }
 
+export interface PipelineNodeTelemetry {
+  node_id: string;
+  step: string;
+  name: string;
+  layer: string;
+  execution_mode: 'inline' | 'async_batch';
+  description: string;
+  status: 'ACTIVE' | 'IDLE' | 'BACKPRESSURE' | 'DEGRADED' | 'UNAVAILABLE' | string;
+  processed_count: number;
+  error_count: number;
+  sample_count: number;
+  last_ms: number | null;
+  avg_ms: number | null;
+  p95_ms: number | null;
+  max_ms: number | null;
+  share_of_inline_pct: number | null;
+  last_active_at: string | null;
+  meta: Record<string, any>;
+}
+
+export interface PipelineFlowTotals {
+  inline_nodes_count: number;
+  active_inline_nodes: number;
+  total_inline_last_ms: number | null;
+  total_inline_avg_ms: number | null;
+  medallion_flush_last_ms: number | null;
+  medallion_flush_avg_ms: number | null;
+  total_with_flush_last_ms: number | null;
+  total_with_flush_avg_ms: number | null;
+  e2e_wall_last_ms: number | null;
+  e2e_wall_avg_ms: number | null;
+  e2e_wall_p95_ms: number | null;
+  bottleneck_node_id: string | null;
+  bottleneck_node_name: string | null;
+  bottleneck_avg_ms: number | null;
+}
+
+export interface PipelineFlowSnapshot {
+  measured_at: string;
+  nodes: PipelineNodeTelemetry[];
+  totals: PipelineFlowTotals;
+}
+
 export interface StreamingStatusResponse {
   profile: string;
   streaming_enabled: boolean;
@@ -250,6 +293,7 @@ export interface StreamingStatusResponse {
   ws_clients: number;
   last_triggered_inference?: Record<string, any> | null;
   incremental_symbols: IncrementalAnalyticsSnapshot[];
+  pipeline_flow?: PipelineFlowSnapshot;
 }
 
 export interface DataCatalogItem {

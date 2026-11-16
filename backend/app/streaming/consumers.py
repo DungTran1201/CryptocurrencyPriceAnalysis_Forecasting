@@ -28,6 +28,7 @@ from backend.app.services.governance_service import GovernanceService
 from backend.app.storage import get_data_root
 from backend.app.storage.medallion import MedallionStorageManager
 from backend.app.streaming.broker import BrokerMessage, MessageBroker, PullSubscription
+from backend.app.streaming.telemetry import PipelineTelemetryTracker
 from backend.app.streaming.ws_hub import WSBroadcastHub
 from ml.incremental_analytics import IncrementalAnalyticsEngine
 
@@ -63,6 +64,7 @@ class MedallionStreamConsumer:
         ws_hub: Optional[WSBroadcastHub] = None,
         on_closed_kline: Optional[Callable[[CanonicalKlineEvent], Awaitable[None]]] = None,
         session_factory: Optional[Callable[[], Any]] = None,
+        telemetry: Optional[PipelineTelemetryTracker] = None,
     ):
         self.broker = broker
         self.durable_name = durable_name
@@ -74,6 +76,7 @@ class MedallionStreamConsumer:
         self.ws_hub = ws_hub
         self.on_closed_kline = on_closed_kline
         self._session_factory = session_factory or AsyncSessionLocal
+        self.telemetry = telemetry
 
         self._dedup = BoundedDedupCache(maxsize=max(settings.resources.stream_queue_maxsize * 2, 5000))
         self._sub: Optional[PullSubscription] = None
@@ -215,6 +218,8 @@ class MedallionStreamConsumer:
         try:
             raw_obj = json.loads(raw_text)
         except json.JSONDecodeError as exc:
+            if self.telemetry:
+                self.telemetry.record_stage_error("consumer_handle")
             await self._route_to_dlq(msg, "UNKNOWN", "json_decode", f"Invalid JSON: {exc}")
             return
 
@@ -228,15 +233,16 @@ class MedallionStreamConsumer:
             else:
                 raise ValueError(f"Unknown canonical event_type: {event_type!r}")
         except Exception as exc:
-            if msg.delivery_count >= settings.streaming.nats_max_deliver:
-                await self._route_to_dlq(msg, symbol, str(event_type or "unknown"), f"Schema validation: {exc}")
-            else:
-                await self._route_to_dlq(msg, symbol, str(event_type or "unknown"), f"Schema validation: {exc}")
+            if self.telemetry:
+                self.telemetry.record_stage_error("consumer_handle")
+            await self._route_to_dlq(msg, symbol, str(event_type or "unknown"), f"Schema validation: {exc}")
             return
 
         # Deduplicate repeated delivery of identical event_id
         if self._dedup.seen(evt.event_id):
             self.dedup_skipped_count += 1
+            if self.telemetry:
+                self.telemetry.record_stage("consumer_handle", (time.perf_counter() - t0) * 1000.0)
             await msg.ack()
             return
 
@@ -249,11 +255,16 @@ class MedallionStreamConsumer:
         self._buffer_bytes += len(msg.payload)
         self._pending_ack_msgs.append(msg)
 
+        t_cons_done = time.perf_counter()
+        if self.telemetry:
+            self.telemetry.record_stage("consumer_handle", (t_cons_done - t0) * 1000.0)
+
         now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
         freshness_sec = max(0.0, (now_naive - evt.event_time).total_seconds())
         DATA_FRESHNESS_SECONDS.labels(symbol=evt.symbol, stream=evt.event_type).set(freshness_sec)
 
         # Update real-time incremental analytics state & Silver buffers
+        t_ana0 = time.perf_counter()
         if isinstance(evt, CanonicalAggTradeEvent):
             self._silver_trades_buf.setdefault(evt.symbol, []).append(evt.model_dump())
             state = self.analytics_engine.get_or_create(evt.symbol, "1m")
@@ -300,6 +311,13 @@ class MedallionStreamConsumer:
                     "analytics": snap,
                 })
 
+        t_ana1 = time.perf_counter()
+        if self.telemetry:
+            self.telemetry.record_stage("incremental_analytics", (t_ana1 - t_ana0) * 1000.0)
+            ing_utc = evt.ingestion_time
+            done_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+            self.telemetry.record_e2e_wall((done_utc - ing_utc).total_seconds() * 1000.0)
+
         PROCESSING_LATENCY.labels(stage="consumer_handle").observe(time.perf_counter() - t0)
 
     async def _safe_closed_callback(self, evt: CanonicalKlineEvent) -> None:
@@ -314,6 +332,7 @@ class MedallionStreamConsumer:
         if not self._pending_ack_msgs and not self._bronze_buf:
             return {"flushed": 0}
 
+        t_fl0 = time.perf_counter()
         bronze_snap = self._bronze_buf
         silver_trades_snap = self._silver_trades_buf
         silver_klines_snap = self._silver_klines_buf
@@ -404,13 +423,19 @@ class MedallionStreamConsumer:
 
             self.flushed_batches_count += 1
             self.last_flush_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            flush_ms = (time.perf_counter() - t_fl0) * 1000.0
+            if self.telemetry:
+                self.telemetry.record_stage("medallion_flush", flush_ms)
             return {
                 "flushed": len(ack_msgs),
                 "bronze_records": total_bronze,
                 "silver_trades": total_silver_trades,
                 "silver_klines": total_silver_klines,
+                "flush_duration_ms": round(flush_ms, 3),
             }
         except Exception as exc:
+            if self.telemetry:
+                self.telemetry.record_stage_error("medallion_flush")
             PROCESSING_FAILURES.labels(stage="microbatch_flush").inc()
             logger.error(f"Micro-batch flush failed ({exc}); NAKing {len(ack_msgs)} messages for redelivery")
             for m in ack_msgs:

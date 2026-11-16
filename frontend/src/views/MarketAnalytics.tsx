@@ -21,6 +21,26 @@ import {
 import { formatCurrency } from '../utils/formatters';
 import { CandlestickChart } from '../components/CandlestickChart';
 
+const buildSvgPolyline = (values: (number | null | undefined)[], width = 800, height = 180): string => {
+  const valid = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  if (valid.length < 2) return '';
+  const minVal = Math.min(...valid);
+  const maxVal = Math.max(...valid);
+  const range = maxVal - minVal || 1;
+  const padY = 14;
+  const usableH = height - padY * 2;
+  const n = values.length;
+  const pts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const val = values[i];
+    if (typeof val !== 'number' || !Number.isFinite(val)) continue;
+    const x = n > 1 ? (i / (n - 1)) * width : 0;
+    const y = padY + (1 - (val - minVal) / range) * usableH;
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  return pts.join(' ');
+};
+
 export const MarketAnalytics: React.FC = () => {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('BTCUSDT');
@@ -196,12 +216,11 @@ export const MarketAnalytics: React.FC = () => {
               <p>No stored candles available for {selectedSymbol} ({timeframe}).</p>
             </div>
           ) : (
-            <div style={{ height: '440px', width: '100%' }}>
-              <CandlestickChart
-                candles={marketData.candles}
-                indicators={marketData.indicators}
-              />
-            </div>
+            <CandlestickChart
+              candles={marketData.candles}
+              indicators={marketData.indicators}
+              height={420}
+            />
           )}
         </div>
       )}
@@ -354,9 +373,38 @@ export const MarketAnalytics: React.FC = () => {
                 <div className="panel-header">
                   <div className="panel-title">
                     <Activity size={18} color="var(--accent-cyan)" />
-                    <span>Recent Rolling Volatility Series</span>
+                    <span>Annualized Volatility Trajectory &amp; Recent Series</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                    <span style={{ color: '#06b6d4' }}>— 7p</span>
+                    <span style={{ color: '#FCD535' }}>— 14p</span>
+                    <span style={{ color: '#A855F7' }}>— 30p</span>
                   </div>
                 </div>
+                {volatilityData.series.length >= 2 && (
+                  <div className="chart-svg-box" style={{ marginBottom: '1rem' }}>
+                    <svg viewBox="0 0 800 180" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
+                      <polyline
+                        fill="none"
+                        stroke="#06b6d4"
+                        strokeWidth="2"
+                        points={buildSvgPolyline(volatilityData.series.slice(-120).map((s) => s.vol_7))}
+                      />
+                      <polyline
+                        fill="none"
+                        stroke="#FCD535"
+                        strokeWidth="1.75"
+                        points={buildSvgPolyline(volatilityData.series.slice(-120).map((s) => s.vol_14))}
+                      />
+                      <polyline
+                        fill="none"
+                        stroke="#A855F7"
+                        strokeWidth="1.5"
+                        points={buildSvgPolyline(volatilityData.series.slice(-120).map((s) => s.vol_30))}
+                      />
+                    </svg>
+                  </div>
+                )}
                 <div className="table-responsive">
                   <table className="data-table">
                     <thead>
@@ -431,9 +479,21 @@ export const MarketAnalytics: React.FC = () => {
                 <div className="panel-header">
                   <div className="panel-title">
                     <TrendingUp size={18} color="var(--accent-cyan)" />
-                    <span>Historical Drawdown Observations</span>
+                    <span>Drawdown Underwater Trajectory &amp; Recent Observations</span>
                   </div>
                 </div>
+                {drawdownsData.series.length >= 2 && (
+                  <div className="chart-svg-box" style={{ marginBottom: '1rem' }}>
+                    <svg viewBox="0 0 800 180" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
+                      <polyline
+                        fill="none"
+                        stroke="#F6465D"
+                        strokeWidth="2"
+                        points={buildSvgPolyline(drawdownsData.series.slice(-150).map((s) => s.drawdown_pct))}
+                      />
+                    </svg>
+                  </div>
+                )}
                 <div className="table-responsive">
                   <table className="data-table">
                     <thead>

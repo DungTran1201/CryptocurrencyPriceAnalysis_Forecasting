@@ -17,6 +17,7 @@ from backend.app.streaming.binance_ws import BinanceWebSocketIngestor
 from backend.app.streaming.broker import MessageBroker, create_broker
 from backend.app.streaming.consumers import MedallionStreamConsumer
 from backend.app.streaming.producer import BoundedEventProducer
+from backend.app.streaming.telemetry import PipelineTelemetryTracker
 from backend.app.streaming.ws_hub import WSBroadcastHub
 from ml.incremental_analytics import IncrementalAnalyticsEngine
 
@@ -27,19 +28,21 @@ class StreamPlatformRuntime:
     """Single-node lifecycle manager for realtime streaming, Medallion consumers, and UI WS hub."""
 
     def __init__(self, broker: Optional[MessageBroker] = None):
+        self.telemetry = PipelineTelemetryTracker()
         self.broker = broker or create_broker()
-        self.ws_hub = WSBroadcastHub()
+        self.ws_hub = WSBroadcastHub(telemetry=self.telemetry)
         self.medallion = MedallionStorageManager()
         self.analytics_engine = IncrementalAnalyticsEngine(
             checkpoint_dir=get_data_root() / settings.storage.checkpoint_subdir,
             max_bars=settings.resources.online_window_max_bars,
         )
-        self.producer = BoundedEventProducer(self.broker)
+        self.producer = BoundedEventProducer(self.broker, telemetry=self.telemetry)
         self.ingestor = BinanceWebSocketIngestor(
             producer=self.producer,
             symbols=settings.streaming.symbols,
             streams=settings.streaming.streams,
             on_reconnect_gap_heal=self._gap_heal_all,
+            telemetry=self.telemetry,
         )
         self.consumer = MedallionStreamConsumer(
             broker=self.broker,
@@ -48,6 +51,7 @@ class StreamPlatformRuntime:
             analytics_engine=self.analytics_engine,
             ws_hub=self.ws_hub,
             on_closed_kline=self._handle_closed_kline_trigger,
+            telemetry=self.telemetry,
         )
         self._forecast_service = ForecastService()
         self._sync_service = BinanceSyncService()
@@ -148,8 +152,6 @@ class StreamPlatformRuntime:
         """Periodic lightweight broker/hub status push and retention check."""
         cycle = 0
         while self._started:
-            await asyncio.sleep(5.0)
-            cycle += 1
             try:
                 if not self.broker.is_connected():
                     try:
@@ -161,23 +163,81 @@ class StreamPlatformRuntime:
                     except Exception:
                         pass
 
-                stream_info = await self.broker.get_stream_info()
-                self.ws_hub.publish_system_status({
-                    "profile": settings.profile.value,
-                    "broker": stream_info,
-                    "ingestor": self.ingestor.stats(),
-                    "producer": self.producer.stats(),
-                    "consumer": self.consumer.stats(),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                })
+                has_ws_clients = self.ws_hub.client_count > 0
+                if has_ws_clients or cycle % 5 == 0:
+                    stream_info = await self.broker.get_stream_info()
+                    pipeline_flow = self.build_pipeline_flow(stream_info)
+                    self.ws_hub.publish_system_status({
+                        "profile": settings.profile.value,
+                        "broker": stream_info,
+                        "ingestor": self.ingestor.stats(),
+                        "producer": self.producer.stats(),
+                        "consumer": self.consumer.stats(),
+                        "pipeline_flow": pipeline_flow,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    })
 
-                # Every 120 cycles (~10 minutes), run retention enforcement off event loop
-                if cycle % 120 == 0:
+                # Every ~10 minutes (600 x 1s), run retention enforcement off event loop
+                if cycle > 0 and cycle % 600 == 0:
                     await asyncio.to_thread(GovernanceService.enforce_retention)
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 logger.warning(f"Maintenance loop error: {exc}")
+            cycle += 1
+            await asyncio.sleep(1.0)
+
+    def build_pipeline_flow(self, broker_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Compute current per-node & total real-time pipeline timing telemetry."""
+        b_info = broker_info or {}
+        p_stats = self.producer.stats()
+        i_stats = self.ingestor.stats()
+        c_stats = self.consumer.stats()
+        return self.telemetry.build_snapshot(
+            ws_connected=bool(i_stats.get("connected")),
+            broker_connected=bool(b_info.get("connected", self.broker.is_connected())),
+            backpressure_active=bool(p_stats.get("backpressure_active")),
+            streaming_enabled=settings.streaming.enabled,
+            node_meta={
+                "ws_ingest": {
+                    "connected": i_stats.get("connected"),
+                    "symbols": len(i_stats.get("symbols", [])),
+                    "reconnects": i_stats.get("reconnect_count", 0),
+                },
+                "normalize": {
+                    "malformed_count": i_stats.get("malformed_count", 0),
+                    "streams": i_stats.get("streams", []),
+                },
+                "bounded_queue": {
+                    "queue_depth": p_stats.get("queue_depth", 0),
+                    "queue_maxsize": p_stats.get("queue_maxsize", 0),
+                    "occupancy_pct": p_stats.get("occupancy_pct", 0.0),
+                    "backpressure_events": p_stats.get("backpressure_events", 0),
+                },
+                "nats_broker": {
+                    "stream": b_info.get("stream"),
+                    "messages": b_info.get("messages"),
+                    "lag": b_info.get("total_consumer_lag"),
+                },
+                "consumer_handle": {
+                    "dedup_skipped": c_stats.get("dedup_skipped_count", 0),
+                    "dlq_count": c_stats.get("dlq_count", 0),
+                    "last_seq": c_stats.get("last_seq", 0),
+                },
+                "incremental_analytics": {
+                    "symbols_tracked": len(self.analytics_engine.all_snapshots()),
+                },
+                "ws_gateway": {
+                    "ws_clients": self.ws_hub.client_count,
+                    "coalesce_ms": settings.resources.ws_coalesce_interval_ms,
+                },
+                "medallion_flush": {
+                    "flushed_batches": c_stats.get("flushed_batches_count", 0),
+                    "pending_buffer": c_stats.get("pending_buffer_records", 0),
+                    "last_flush_at": c_stats.get("last_flush_at"),
+                },
+            },
+        )
 
     async def status_snapshot(self) -> Dict[str, Any]:
         """Return comprehensive live streaming, broker, queue, and incremental state telemetry."""
@@ -193,6 +253,7 @@ class StreamPlatformRuntime:
             "ws_clients": self.ws_hub.client_count,
             "last_triggered_inference": self._last_triggered_inference,
             "incremental_symbols": self.analytics_engine.all_snapshots(),
+            "pipeline_flow": self.build_pipeline_flow(broker_info),
         }
 
 

@@ -432,6 +432,7 @@ body {
   border-radius: var(--radius-lg);
   padding: 1.25rem;
   box-shadow: var(--shadow-sm);
+  min-width: 0;
   transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
@@ -461,25 +462,32 @@ body {
 
 .grid-2 {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.25rem;
 }
 
-.grid-3 {
+.grid-3, .grid-3-cols {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.25rem;
+}
+
+.grid-3-cols-uneven {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  align-items: start;
 }
 
 .grid-4, .grid-4-cols {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1.25rem;
 }
 
 .grid-5-cols {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -491,6 +499,7 @@ body {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   padding: 1.15rem;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -1275,3 +1284,401 @@ body {
   max-width: 860px;
 }
 
+
+
+/* ----------------------------------------------------
+   Chart Containers, Responsive Grids, Histogram & Modals
+   ---------------------------------------------------- */
+.view-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 420px;
+  min-height: 360px;
+  max-height: 520px;
+  overflow: hidden;
+  background-color: #0d1218;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.chart-svg-box {
+  position: relative;
+  width: 100%;
+  height: 210px;
+  min-height: 210px;
+  max-height: 210px;
+  overflow: hidden;
+  background-color: rgba(11, 14, 17, 0.7);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+}
+
+.mini-card {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.7rem 0.85rem;
+  min-width: 0;
+}
+
+.mini-card-label {
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.mini-card-value {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.table-responsive, .table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  text-align: center;
+  padding: 2.25rem 1.25rem;
+  color: var(--text-secondary);
+}
+
+/* Return Distribution Histogram (bounded 220px height) */
+.histogram-bars-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.45rem;
+  height: 220px;
+  min-height: 220px;
+  max-height: 220px;
+  padding: 0.75rem 0.4rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.hist-col {
+  flex: 1 1 0;
+  min-width: 28px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hist-bar-track {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  background-color: rgba(255, 255, 255, 0.03);
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+}
+
+.hist-bar-fill {
+  width: 100%;
+  background: linear-gradient(180deg, #06b6d4 0%, #0284c7 100%);
+  border-radius: 4px 4px 0 0;
+  transition: height 0.22s ease;
+}
+
+.hist-label {
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.correlation-matrix-table th, .correlation-matrix-table td {
+  min-width: 96px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.9rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  margin-top: 1rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.btn-close {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-close:hover {
+  color: #fff;
+  border-color: var(--border-strong);
+}
+
+.form-control {
+  width: 100%;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.84rem;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.task-card {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.95rem;
+}
+
+.task-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.task-seq {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--accent-yellow);
+  margin-right: 0.4rem;
+}
+
+.task-name {
+  font-weight: 600;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+}
+
+.task-logs {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1024px) {
+  .grid-3-cols, .grid-3-cols-uneven {
+    grid-template-columns: 1fr;
+  }
+  .grid-3-cols-uneven > * {
+    grid-column: span 1 !important;
+  }
+}
+
+/* ----------------------------------------------------
+   Interactive Real-Time Pipeline Visualizer & Timing UI
+   ---------------------------------------------------- */
+.rt-pipeline-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 1024px) {
+  .rt-pipeline-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .rt-pipeline-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rt-pipeline-track {
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding: 0.65rem 0.25rem 0.9rem;
+}
+
+.rt-node-card {
+  flex: 1 0 164px;
+  min-width: 164px;
+  max-width: 215px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  transition: border-color 0.16s ease, transform 0.16s ease, background-color 0.16s ease;
+}
+
+.rt-node-card:hover {
+  border-color: var(--accent-yellow);
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+}
+
+.rt-node-card.selected {
+  border-color: var(--accent-yellow);
+  box-shadow: 0 0 0 1px rgba(252, 213, 53, 0.35);
+  background: rgba(252, 213, 53, 0.05);
+}
+
+.rt-node-card.async-batch {
+  border-style: dashed;
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.rt-node-card.status-backpressure {
+  border-color: rgba(245, 158, 11, 0.75);
+}
+
+.rt-node-card.status-degraded {
+  border-color: rgba(246, 70, 93, 0.75);
+}
+
+.rt-node-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.rt-node-step {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--accent-yellow);
+  letter-spacing: 0.04em;
+}
+
+.rt-node-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.25;
+}
+
+.rt-node-timing {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 0.15rem;
+  font-family: var(--font-mono);
+}
+
+.rt-node-ms {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #06b6d4;
+}
+
+.rt-node-share-track {
+  height: 5px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.rt-node-share-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #06b6d4, #FCD535);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.rt-node-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.rt-connector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 26px;
+  color: var(--text-muted);
+  position: relative;
+}
+
+.rt-connector.flowing svg {
+  color: #06b6d4;
+  animation: rtPulseArrow 1.4s ease-in-out infinite;
+}
+
+@keyframes rtPulseArrow {
+  0%, 100% { opacity: 0.45; transform: translateX(-1px); }
+  50% { opacity: 1; transform: translateX(2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rt-connector.flowing svg {
+    animation: none;
+  }
+}
+
+.rt-inspector-panel {
+  margin-top: 0.5rem;
+  background: rgba(11, 14, 17, 0.55);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+}

@@ -14,6 +14,7 @@ import {
 import { api } from '../services/api';
 import { SymbolInfo, MarketDataResponse, StreamingStatusResponse } from '../types';
 import { CandlestickChart } from '../components/CandlestickChart';
+import { RealtimePipelineFlow } from '../components/RealtimePipelineFlow';
 import { useMarketStream } from '../hooks/useMarketStream';
 import {
   formatCurrency,
@@ -41,7 +42,8 @@ export const MarketOverview: React.FC = () => {
     rsi: true
   });
 
-  const { wsState, liveSymbols, recentFeed, lastMessageAt } = useMarketStream(true);
+  const { wsState, liveSymbols, streamStatus, recentFeed, lastMessageAt } = useMarketStream(true);
+  const livePipelineFlow = streamStatus?.pipeline_flow || streamingMeta?.pipeline_flow || null;
   const timeframes = ['1m', '5m', '15m', '1h', '4h', '1d'];
   const activeReqRef = useRef<number>(0);
 
@@ -334,6 +336,7 @@ export const MarketOverview: React.FC = () => {
               candles={marketData.candles}
               indicators={marketData.indicators}
               visibleIndicators={indicators}
+              height={400}
             />
           ) : (
             <div className="empty-state-container">
@@ -395,6 +398,14 @@ export const MarketOverview: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* 4. Interactive Real-Time Streaming Data Flow & Per-Node Processing Time */}
+      <RealtimePipelineFlow
+        flow={livePipelineFlow}
+        wsConnected={wsState === 'CONNECTED'}
+        onAfterFlush={loadData}
+        compact
+      />
     </div>
   );
 };

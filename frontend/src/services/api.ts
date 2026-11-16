@@ -64,7 +64,7 @@ export const api = {
   getDLQEvents: (limit = 50): Promise<DLQEventItem[]> =>
     fetchJson<DLQEventItem[]>(`${API_BASE}/streaming/dlq?limit=${limit}`),
 
-  flushStreamingBuffer: (): Promise<{ flushed: number; bronze_records?: number; silver_klines?: number }> =>
+  flushStreamingBuffer: (): Promise<{ flushed: number; bronze_records?: number; silver_klines?: number; flush_duration_ms?: number }> =>
     fetchJson(`${API_BASE}/streaming/flush`, { method: 'POST' }),
 
   replayStreamMessages: (subject = 'market.>', startSeq = 1, maxMsgs = 50): Promise<any> =>

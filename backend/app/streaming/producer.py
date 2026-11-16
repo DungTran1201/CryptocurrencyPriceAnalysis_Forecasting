@@ -1,7 +1,7 @@
 """Bounded async producer queue with explicit backpressure & retry handling."""
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import time
 from typing import Dict, Any, Optional
 
@@ -14,6 +14,7 @@ from backend.app.core.metrics import (
     QUEUE_DEPTH,
 )
 from backend.app.streaming.broker import MessageBroker
+from backend.app.streaming.telemetry import PipelineTelemetryTracker
 
 logger = get_logger("BoundedProducer")
 
@@ -25,6 +26,7 @@ class QueuedEvent:
     msg_id: str
     symbol: str
     stream_label: str
+    enqueued_mono: float = field(default_factory=time.perf_counter)
 
 
 class BoundedEventProducer:
@@ -35,10 +37,12 @@ class BoundedEventProducer:
         broker: MessageBroker,
         maxsize: Optional[int] = None,
         high_watermark_ratio: Optional[float] = None,
+        telemetry: Optional[PipelineTelemetryTracker] = None,
     ):
         self.broker = broker
         self.maxsize = maxsize or settings.resources.stream_queue_maxsize
         self.high_watermark_ratio = high_watermark_ratio or settings.resources.queue_high_watermark_ratio
+        self.telemetry = telemetry
         self._queue: asyncio.Queue[QueuedEvent] = asyncio.Queue(maxsize=self.maxsize)
         self._running = False
         self._task: Optional[asyncio.Task] = None
@@ -117,8 +121,12 @@ class BoundedEventProducer:
                 QUEUE_DEPTH.labels(queue="ingestion_outbound").set(self._queue.qsize())
                 continue
 
+            if self.telemetry:
+                self.telemetry.record_stage("bounded_queue", (time.perf_counter() - item.enqueued_mono) * 1000.0)
+
             published = False
             while not published:
+                t_pub0 = time.perf_counter()
                 try:
                     if not self.broker.is_connected():
                         await self.broker.connect()
@@ -127,6 +135,8 @@ class BoundedEventProducer:
                         payload=item.payload,
                         msg_id=item.msg_id,
                     )
+                    if self.telemetry:
+                        self.telemetry.record_stage("nats_broker", (time.perf_counter() - t_pub0) * 1000.0)
                     self.published_count += 1
                     EVENTS_PUBLISHED.labels(stream=item.stream_label, symbol=item.symbol).inc()
                     published = True
@@ -136,6 +146,8 @@ class BoundedEventProducer:
                     raise
                 except Exception as exc:
                     self.publish_error_count += 1
+                    if self.telemetry:
+                        self.telemetry.record_stage_error("nats_broker")
                     PROCESSING_FAILURES.labels(stage="broker_publish").inc()
                     logger.warning(f"Broker publish error ({exc}); backing off {backoff:.1f}s")
                     await asyncio.sleep(backoff)
