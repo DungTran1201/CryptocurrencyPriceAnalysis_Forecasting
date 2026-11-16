@@ -1,194 +1,141 @@
 # Standalone Developer Installation & Environment Setup Guide
 
-**Platform**: Binance Predict Value & Trend  
-**Target Environment**: Windows PowerShell (Verified) & macOS/Linux (Bash)  
-**Python Runtime**: 3.12+ (Tested on Python 3.12.9)  
-**Node.js Runtime**: Node 18+ (Tested on Node v24.18.0, npm 11.7.0)  
-
-This guide provides end-to-end instructions to clone, configure, initialize, sync, run, test, and troubleshoot the application on a clean development machine.
+**Platform:** Resource-Efficient Real-Time Financial Data Intelligence Platform (`v3.0.0`)  
+**Target Environment:** Windows PowerShell (Verified) & Docker Compose Profiles (`lite`, `standard`, `extended`)  
+**Python Runtime:** 3.12+ (Tested on Python 3.12.9)  
+**Node.js Runtime:** Node 24+ (Tested on Node v24.18.0, npm 11.16.0)
 
 ---
 
-## 1. Prerequisites Installation
+## 1. Prerequisites
 
-Ensure the following tools are installed on your workstation:
-- **Git**: [git-scm.com](https://git-scm.com/)
-- **Python 3.12+**: [python.org](https://www.python.org/downloads/) (Check **"Add python.exe to PATH"** during Windows setup)
-- **Node.js 18+ & npm**: [nodejs.org](https://nodejs.org/)
-
-Verify installations in a fresh PowerShell terminal:
-```powershell
-python --version
-node --version
-npm --version
-git --version
-```
+- **Python 3.12+**: (`py -3.12 --version`)
+- **Node.js 20+ & npm**: (`node --version`, `npm --version`)
+- **Git**
+- **Optional (Containerized Profiles):** Docker Desktop + Docker Compose v2
 
 ---
 
-## 2. Clone Repository & Directory Navigation
+## 2. Create Virtual Environment & Install Backend Dependencies
 
 ```powershell
-git clone https://github.com/DungTran1201/CryptocurrencyPriceAnalysis_Forecasting.git binance-platform
-cd binance-platform
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 ---
 
-## 3. Python Virtual Environment & Backend Dependencies
+## 3. Install Native Single-Node NATS JetStream Binary (Profile LITE)
 
-Create an isolated Python virtual environment inside the repository root (`.venv`):
+For a lightweight native deployment (~22 MB RSS, no Docker VM required):
 
 ```powershell
-# Create virtual environment
-python -m venv .venv
-
-# Activate environment (Windows PowerShell)
-.venv\Scripts\Activate.ps1
-
-# (Optional: If PowerShell execution policy restricts scripts, run:
-# Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process)
-
-# Upgrade pip and install pinned backend dependencies
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File .\scripts\install_nats.ps1
 ```
 
-*For Linux/macOS users:*
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
+This downloads the official Windows `nats-server.exe` release into `.bin\nats-server.exe`.
 
 ---
 
-## 4. Frontend Dependencies & Production Build
-
-Navigate to the `frontend/` directory and install dependencies using `npm`:
+## 4. Install Frontend Dependencies & Compile Production Static Bundle
 
 ```powershell
 cd frontend
 npm install
-
-# Verify unit tests
 npm test
-
-# Compile TypeScript and build production bundle
 npm run build
 cd ..
 ```
 
----
-
-## 5. Local Environment Configuration
-
-Copy `.env.example` to `.env` if custom overrides are needed. The platform defaults to safe zero-config local defaults using SQLite:
-
-```powershell
-# Optional: create a local .env file
-# APP_ENV=development
-# DATABASE_URL=sqlite+aiosqlite:///./data/crypto_platform.db
-# CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","http://localhost:8000"]
-# BINANCE_API_KEY="" # Optional: Public endpoints require no API key
-```
+`npm run build` compiles the optimized React bundle into `frontend/dist/`, which FastAPI mounts automatically at `/`.
 
 ---
 
-## 6. Database Initialization & Initial Seed Data
+## 5. Database Migrations (Alembic)
 
-Initialize database tables (SQLite by default, stored at `data/crypto_platform.db`) and seed default market trading pairs (`BTCUSDT`, `ETHUSDT`, `SOLUSDT`, `BNBUSDT`):
-
-```powershell
-# Set PYTHONPATH so the backend package resolves correctly
-$env:PYTHONPATH = "."
-
-# Run table and seed initialization
-.venv\Scripts\python -c "import asyncio; from backend.app.core.database import init_db; from backend.app.main import seed_initial_symbols; asyncio.run(init_db()); asyncio.run(seed_initial_symbols())"
-```
-
----
-
-## 7. Data Synchronization & Market Seeding
-
-To immediately populate historical candlestick data for analytics and modeling without manual clicks:
+Initialize or upgrade the SQLite (LITE) or PostgreSQL (STANDARD/EXTENDED) metadata schema:
 
 ```powershell
 $env:PYTHONPATH = "."
-.venv\Scripts\python -c "import asyncio; from backend.app.services.market_service import MarketService; asyncio.run(MarketService.sync_candles('BTCUSDT', '1h', lookback_days=30))"
+.\.venv\Scripts\alembic.exe upgrade head
 ```
 
 ---
 
-## 8. Starting Backend and Frontend Servers
+## 6. Start the Platform (Adaptive Execution Profiles)
 
-### Option A: Unified Server (FastAPI serving production frontend build)
-FastAPI automatically serves the compiled `frontend/dist` bundle at the root URL:
+### Option A — Native Profile LITE (Recommended on 8 GB Personal Computers)
+Starts native `nats-server.exe` JetStream + Alembic upgrade + FastAPI + Embedded Binance WS Ingestor + Medallion Consumers + Static Frontend:
 
 ```powershell
-# In repository root with .venv active:
-$env:PYTHONPATH = "."
-.venv\Scripts\uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-Open **[http://localhost:8000/](http://localhost:8000/)** in your browser.
-
-### Option B: Separate Development Servers (with Vite HMR)
-Open two separate PowerShell terminals:
-
-**Terminal 1 (Backend API)**:
-```powershell
-cd c:\Users\PC\Project\Binance-Predict-Value-And-Trend
-.venv\Scripts\activate
-$env:PYTHONPATH = "."
-uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+powershell -ExecutionPolicy Bypass -File .\scripts\start_lite.ps1
 ```
 
-**Terminal 2 (Frontend Dev Server)**:
+Open `http://127.0.0.1:8000/`.
+
+### Option B — Native Profile STANDARD (Separate Stream Worker Process)
+1. Terminal 1 (NATS JetStream):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\start_nats.ps1 -MaxMemMb 128 -MaxFileMb 512
+   ```
+2. Terminal 2 (Standalone Stream Ingestion & Consumer Worker):
+   ```powershell
+   $env:PYTHONPATH = "."
+   $env:PLATFORM_PROFILE = "standard"
+   $env:STREAM_EMBEDDED_IN_API = "false"
+   .\.venv\Scripts\python.exe -m backend.app.workers.stream_worker
+   ```
+3. Terminal 3 (API & Serving):
+   ```powershell
+   $env:PYTHONPATH = "."
+   $env:PLATFORM_PROFILE = "standard"
+   $env:STREAM_EMBEDDED_IN_API = "false"
+   .\.venv\Scripts\uvicorn.exe backend.app.main:app --host 127.0.0.1 --port 8000
+   ```
+
+### Option C — Docker Compose Profiles (`lite`, `standard`, `extended`)
+
 ```powershell
-cd c:\Users\PC\Project\Binance-Predict-Value-And-Trend\frontend
-npm run dev
-```
-Vite will start at **[http://localhost:5173/](http://localhost:5173/)** with automatic proxying to backend on port 8000.
+# Profile LITE (NATS + Backend Lite)
+docker compose -f docker\docker-compose.yml --profile lite up -d
 
----
+# Profile STANDARD (+ PostgreSQL + Stream Worker + Nginx Frontend)
+docker compose -f docker\docker-compose.yml --profile standard up -d
 
-## 9. Verification & Health Probes
-
-Test service responsiveness using PowerShell:
-
-```powershell
-# Health check probe
-Invoke-RestMethod -Uri "http://localhost:8000/api/v1/health"
-
-# Operational telemetry and candle count
-Invoke-RestMethod -Uri "http://localhost:8000/api/v1/system/status"
-
-# Interactive Swagger OpenAPI documentation
-# Open http://localhost:8000/docs
+# Profile EXTENDED (+ MinIO S3 + Prometheus + Grafana)
+docker compose -f docker\docker-compose.yml --profile extended up -d
 ```
 
 ---
 
-## 10. Running Test Suites
+## 7. Recovery, Replay & Maintenance Commands
 
 ```powershell
-# 1. Run all backend tests (API contracts, DQ engine, Marts, ML Pipeline)
-$env:PYTHONPATH = "."
-.venv\Scripts\python -m pytest -q
+# Backfill gaps & recompute Gold Marts/Features from Silver
+powershell -ExecutionPolicy Bypass -File .\scripts\recover_platform.ps1 -Symbol BTCUSDT -Timeframe 1h -FillGaps -RecomputeGold
 
-# 2. Run frontend unit tests
+# Enforce disk retention budgets
+powershell -ExecutionPolicy Bypass -File .\scripts\recover_platform.ps1 -RunRetention
+```
+
+---
+
+## 8. Run Automated Tests & Benchmarks
+
+```powershell
+# Backend & Streaming & ML & Financial Correctness Suite
+$env:PYTHONPATH = "."
+$env:APP_ENV = "testing"
+.\.venv\Scripts\python.exe -m pytest tests/ -v
+
+# Frontend Unit Tests & Build
 cd frontend
 npm test
-
-# 3. Check TypeScript types and build
 npm run build
 cd ..
+
+# Resource & Throughput Benchmark
+$env:PYTHONPATH = "."
+.\.venv\Scripts\python.exe scripts\benchmark_platform.py
 ```
-
----
-
-## 11. Clean Shutdown
-
-- Press `Ctrl + C` in each terminal window to cleanly terminate `uvicorn` and `vite`.
-- SQLite database transactions commit atomically; no locks persist after process termination.

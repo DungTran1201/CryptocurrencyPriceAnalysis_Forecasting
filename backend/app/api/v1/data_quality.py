@@ -26,9 +26,12 @@ async def get_data_quality_overview(db: AsyncSession = Depends(get_db)) -> Dict[
 
 
 @router.get("/lineage", summary="Retrieve Medallion data lineage DAG")
-async def get_lineage(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
-    """Returns nodes and edges connecting Bronze, Silver, Gold, Features, and Serving."""
-    return await DataQualityService.get_lineage_graph(db)
+async def get_lineage(
+    dataset: Optional[str] = Query(None, description="Optional dataset_id filter"),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Return nodes, contract edges, and persisted execution lineage runs."""
+    return await DataQualityService.get_lineage_graph(db, dataset_filter=dataset)
 
 
 @router.get("/runs", summary="Query historical data quality evaluation runs")

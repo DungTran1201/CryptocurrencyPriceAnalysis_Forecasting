@@ -28,6 +28,7 @@ export const PipelineObservatory: React.FC = () => {
   const [triggerSymbol, setTriggerSymbol] = useState<string>('BTCUSDT');
   const [triggerTimeframe, setTriggerTimeframe] = useState<string>('1h');
   const [triggerLookback, setTriggerLookback] = useState<number>(30);
+  const [skipNetworkIngest, setSkipNetworkIngest] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [triggerSuccess, setTriggerSuccess] = useState<string | null>(null);
 
@@ -71,7 +72,13 @@ export const PipelineObservatory: React.FC = () => {
     try {
       setIsSubmitting(true);
       setTriggerSuccess(null);
-      const res: any = await api.triggerPipeline(triggerSymbol, triggerTimeframe, triggerLookback, true);
+      const res: any = await api.triggerPipeline(
+        triggerSymbol,
+        triggerTimeframe,
+        triggerLookback,
+        true,
+        skipNetworkIngest
+      );
       setTriggerSuccess(`Pipeline executed successfully! Added ${res.rows_inserted || 0} rows in ${res.duration_seconds?.toFixed(2) || '0.00'}s.`);
       await loadData();
       setTimeout(() => {
@@ -415,6 +422,17 @@ export const PipelineObservatory: React.FC = () => {
                     value={triggerLookback}
                     onChange={(e) => setTriggerLookback(parseInt(e.target.value) || 30)}
                   />
+                </div>
+
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.84rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={skipNetworkIngest}
+                      onChange={(e) => setSkipNetworkIngest(e.target.checked)}
+                    />
+                    <span>Historical Recomputation Only (Silver → Gold/Features without REST sync)</span>
+                  </label>
                 </div>
               </div>
 

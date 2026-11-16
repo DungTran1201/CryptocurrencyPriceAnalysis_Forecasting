@@ -117,6 +117,173 @@ export interface SystemStatus {
   checkpoints: CheckpointSummary[];
 }
 
+export interface SystemResourcesResponse {
+  profile: string;
+  limits: {
+    total_memory_mb: number;
+    worker_concurrency: number;
+    stream_queue_maxsize: number;
+    consumer_batch_size: number;
+    bronze_flush_max_records: number;
+    microbatch_flush_max_age_sec: number;
+    duckdb_memory_limit: string;
+    duckdb_threads: number;
+    ml_max_train_rows: number;
+    ws_coalesce_interval_ms: number;
+  };
+  measured: {
+    process_pid: number;
+    process_rss_mb: number;
+    memory_budget_mb: number;
+    budget_utilization_pct: number;
+    process_cpu_percent: number;
+    host_ram_total_mb: number;
+    host_ram_available_mb: number;
+    host_ram_used_pct: number;
+    disk_free_gb: number;
+    storage_mb: {
+      bronze: number;
+      silver: number;
+      gold: number;
+      nats: number;
+      metadata_db: number;
+    };
+  };
+  streaming: {
+    broker_connected: boolean;
+    broker_backend?: string;
+    broker_messages: number;
+    total_consumer_lag: number;
+    ws_connected: boolean;
+    events_received: number;
+    events_published: number;
+    events_consumed: number;
+    queue_depth: number;
+    backpressure_active: boolean;
+    dlq_count: number;
+  };
+}
+
+export interface IncrementalAnalyticsSnapshot {
+  symbol: string;
+  timeframe: string;
+  bar_count: number;
+  last_open_time?: string | null;
+  last_close?: number | null;
+  live_price?: number | null;
+  live_trade_time?: string | null;
+  live_trades_count: number;
+  simple_return?: number | null;
+  log_return?: number | null;
+  sma_7?: number | null;
+  sma_25?: number | null;
+  ema_12?: number | null;
+  ema_26?: number | null;
+  rsi_14?: number | null;
+  macd_line?: number | null;
+  macd_signal?: number | null;
+  macd_hist?: number | null;
+  boll_mid?: number | null;
+  boll_upper?: number | null;
+  boll_lower?: number | null;
+  atr_14?: number | null;
+  vwap?: number | null;
+  vol_7_ann_pct?: number | null;
+  vol_14_ann_pct?: number | null;
+  vol_30_ann_pct?: number | null;
+  var_95_pct?: number | null;
+  cvar_95_pct?: number | null;
+  var_99_pct?: number | null;
+  cvar_99_pct?: number | null;
+  running_peak?: number | null;
+  current_drawdown_pct: number;
+  max_drawdown_pct: number;
+}
+
+export interface StreamingStatusResponse {
+  profile: string;
+  streaming_enabled: boolean;
+  embedded_in_api: boolean;
+  broker: {
+    connected: boolean;
+    backend?: string;
+    url?: string;
+    stream?: string;
+    messages?: number;
+    bytes?: number;
+    first_seq?: number;
+    last_seq?: number;
+    dlq_messages?: number;
+    total_consumer_lag?: number;
+    consumers?: { name: string; num_pending: number; num_ack_pending: number; lag: number }[];
+  };
+  ingestor: {
+    connected: boolean;
+    endpoint?: string | null;
+    symbols: string[];
+    streams: string[];
+    received_count: number;
+    malformed_count: number;
+    reconnect_count: number;
+    last_event_time?: string | null;
+    last_error?: string | null;
+  };
+  producer: {
+    queue_depth: number;
+    queue_maxsize: number;
+    occupancy_pct: number;
+    backpressure_active: boolean;
+    backpressure_events: number;
+    published_count: number;
+    publish_errors: number;
+  };
+  consumer: {
+    durable_name: string;
+    consumed_count: number;
+    dedup_skipped_count: number;
+    flushed_batches_count: number;
+    dlq_count: number;
+    last_seq: number;
+    pending_buffer_records: number;
+    last_flush_at?: string | null;
+  };
+  ws_clients: number;
+  last_triggered_inference?: Record<string, any> | null;
+  incremental_symbols: IncrementalAnalyticsSnapshot[];
+}
+
+export interface DataCatalogItem {
+  dataset_id: string;
+  dataset_name: string;
+  layer: string;
+  description: string;
+  schema: { name: string; type: string; nullable: boolean; description: string }[];
+  data_type: string;
+  source: string;
+  partition_spec?: string;
+  row_count: number;
+  size_bytes: number;
+  storage_location: string;
+  owner: string;
+  retention_policy: string;
+  version: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DLQEventItem {
+  id: string;
+  subject: string;
+  stream_type: string;
+  symbol: string;
+  event_id?: string | null;
+  error_reason: string;
+  delivery_count: number;
+  status: string;
+  created_at: string;
+  replayed_at?: string | null;
+}
+
 export interface PipelineOverview {
   total_runs: number;
   succeeded_runs: number;
@@ -133,10 +300,12 @@ export interface PipelineOverview {
 export interface PipelineRunItem {
   id: string;
   pipeline_name: string;
+  workflow_version?: string;
   symbol: string;
   timeframe: string;
   status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | string;
   trigger_type: string;
+  retry_count?: number;
   started_at?: string | null;
   completed_at?: string | null;
   duration_seconds?: number | null;
@@ -155,16 +324,22 @@ export interface PipelineTaskItem {
   id: string;
   task_name: string;
   sequence_order: number;
+  depends_on?: string | null;
   status: string;
+  retry_count?: number;
   started_at?: string | null;
   completed_at?: string | null;
   duration_seconds?: number | null;
   records_processed: number;
+  input_dataset?: string | null;
+  output_dataset?: string | null;
   error_message?: string | null;
   logs?: string | null;
 }
 
 export interface PipelineRunDetail extends PipelineRunItem {
+  input_datasets?: string[];
+  output_datasets?: string[];
   tasks: PipelineTaskItem[];
 }
 
@@ -182,6 +357,7 @@ export interface DataQualityOverview {
 export interface DataQualityRunItem {
   id: string;
   dataset_name: string;
+  check_mode?: string;
   symbol: string;
   timeframe: string;
   run_timestamp: string;
@@ -222,9 +398,22 @@ export interface LineageEdge {
   contract: string;
 }
 
+export interface LineageRecordedRun {
+  id: string;
+  run_id?: string | null;
+  source_dataset: string;
+  target_dataset: string;
+  transformation: string;
+  records_in: number;
+  records_out: number;
+  status: string;
+  recorded_at: string;
+}
+
 export interface LineageGraphResponse {
   nodes: LineageNode[];
   edges: LineageEdge[];
+  recorded_runs?: LineageRecordedRun[];
   last_updated: string;
 }
 
@@ -242,6 +431,10 @@ export interface DatasetMetadata {
   description: string;
   primary_keys: string[];
   columns: DatasetColumn[];
+  row_count?: number;
+  size_bytes?: number;
+  retention_policy?: string;
+  storage_location?: string;
 }
 
 export interface DatasetPreviewResponse {
@@ -271,6 +464,7 @@ export interface ReturnsDistributionResponse {
   end_time?: string;
   metrics?: {
     mean_pct: number;
+    log_mean_pct?: number;
     median_pct: number;
     std_pct: number;
     variance_pct: number;
@@ -281,7 +475,11 @@ export interface ReturnsDistributionResponse {
     p25_pct: number;
     p75_pct: number;
     var_95_pct: number;
+    cvar_95_pct?: number;
     var_99_pct: number;
+    cvar_99_pct?: number;
+    atr_14?: number | null;
+    vwap?: number | null;
   };
   histogram?: {
     bin_start: number;
@@ -329,6 +527,7 @@ export interface CorrelationMatrixResponse {
   has_sufficient_data: boolean;
   message?: string;
   matrix: Record<string, any>[];
+  covariance_matrix?: Record<string, any>[];
 }
 
 export interface MLflowTrackingStatus {
@@ -365,4 +564,3 @@ export interface ExperimentRunItem {
   gating_status: string;
   promotion_criteria: string;
 }
-

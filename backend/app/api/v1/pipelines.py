@@ -1,4 +1,4 @@
-"""Pipeline orchestration and task execution endpoints."""
+"""Pipeline orchestration, recomputation, and task execution endpoints."""
 
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, status, BackgroundTasks
@@ -6,8 +6,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db, AsyncSessionLocal
-from backend.app.services.pipeline_service import PipelineService
 from backend.app.core.logging import get_logger
+from backend.app.core.security import require_admin_if_configured, validate_symbol, validate_timeframe
+from backend.app.services.pipeline_service import PipelineService
 
 router = APIRouter(prefix="/pipelines", tags=["Pipelines"])
 logger = get_logger("PipelineRouter")
@@ -17,16 +18,28 @@ class TriggerPipelineRequest(BaseModel):
     """Payload to trigger an asynchronous Medallion data pipeline run."""
     symbol: str = Field(default="BTCUSDT", description="Trading pair symbol")
     timeframe: str = Field(default="1h", description="Candle timeframe (e.g. 1h, 15m, 1d)")
-    trigger_type: str = Field(default="MANUAL", description="Trigger mechanism (MANUAL, SCHEDULED)")
+    trigger_type: str = Field(default="MANUAL", description="Trigger mechanism (MANUAL, SCHEDULED, RETRY, BACKFILL)")
     lookback_days: int = Field(default=30, ge=1, le=180, description="Lookback window if initial seed")
+    skip_network_ingest: bool = Field(default=False, description="If true, recompute Silver/Gold/Features from stored candles")
 
 
-async def run_pipeline_background(symbol: str, timeframe: str, trigger_type: str, lookback_days: int):
+async def run_pipeline_background(
+    symbol: str,
+    timeframe: str,
+    trigger_type: str,
+    lookback_days: int,
+    skip_network_ingest: bool = False,
+):
     """Background task executor for pipeline execution with an isolated DB session."""
     async with AsyncSessionLocal() as db:
         try:
             await PipelineService.execute_medallion_pipeline(
-                db, symbol=symbol, timeframe=timeframe, trigger_type=trigger_type, lookback_days=lookback_days
+                db,
+                symbol=symbol,
+                timeframe=timeframe,
+                trigger_type=trigger_type,
+                lookback_days=lookback_days,
+                skip_network_ingest=skip_network_ingest,
             )
         except Exception as e:
             logger.error(f"Background pipeline failed for {symbol}: {e}")
@@ -34,7 +47,7 @@ async def run_pipeline_background(symbol: str, timeframe: str, trigger_type: str
 
 @router.get("/overview", summary="Retrieve aggregated pipeline operational metrics")
 async def get_pipeline_overview(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
-    """Provides high-level pipeline KPIs: total runs, success rate, running tasks, throughput."""
+    """Provide high-level pipeline KPIs: total runs, success rate, running tasks, throughput."""
     return await PipelineService.get_overview_stats(db)
 
 
@@ -45,9 +58,9 @@ async def list_pipeline_runs(
     timeframe: Optional[str] = Query(None, description="Filter by timeframe"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> List[Dict[str, Any]]:
-    """Returns paginated pipeline runs with execution metadata and statistics."""
+    """Return paginated pipeline runs with execution metadata and statistics."""
     runs = await PipelineService.list_runs(
         db, status=status, symbol=symbol, timeframe=timeframe, limit=limit, offset=offset
     )
@@ -55,10 +68,12 @@ async def list_pipeline_runs(
         {
             "id": r.id,
             "pipeline_name": r.pipeline_name,
+            "workflow_version": r.workflow_version,
             "symbol": r.symbol,
             "timeframe": r.timeframe,
             "status": r.status,
             "trigger_type": r.trigger_type,
+            "retry_count": r.retry_count,
             "started_at": r.started_at.isoformat() if r.started_at else None,
             "completed_at": r.completed_at.isoformat() if r.completed_at else None,
             "duration_seconds": r.duration_seconds,
@@ -79,9 +94,9 @@ async def list_pipeline_runs(
 @router.get("/runs/{run_id}", summary="Get detailed task breakdown for a pipeline run")
 async def get_pipeline_run_details(
     run_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Returns run metadata and logs for each task stage."""
+    """Return run metadata and logs for each task stage."""
     run = await PipelineService.get_run_details(db, run_id)
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pipeline run not found")
@@ -93,29 +108,39 @@ async def trigger_pipeline(
     req: TriggerPipelineRequest,
     background_tasks: BackgroundTasks,
     sync_mode: bool = Query(False, description="If true, execute synchronously; otherwise run in background"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_admin_if_configured),
 ) -> Dict[str, Any]:
-    """Initiates an end-to-end Medallion pipeline run (Ingest -> Validate -> Gold Marts -> Features)."""
+    """Initiate an end-to-end Medallion pipeline run (Ingest -> Validate -> Gold Marts -> Features)."""
+    sym = validate_symbol(req.symbol)
+    tf = validate_timeframe(req.timeframe)
+
     if sync_mode:
         run = await PipelineService.execute_medallion_pipeline(
-            db, symbol=req.symbol, timeframe=req.timeframe, trigger_type=req.trigger_type, lookback_days=req.lookback_days
+            db,
+            symbol=sym,
+            timeframe=tf,
+            trigger_type=req.trigger_type,
+            lookback_days=req.lookback_days,
+            skip_network_ingest=req.skip_network_ingest,
         )
         return {
             "status": "COMPLETED",
             "run_id": run.id,
             "pipeline_status": run.status,
             "duration_seconds": run.duration_seconds,
-            "rows_inserted": run.rows_inserted
+            "rows_inserted": run.rows_inserted,
         }
     else:
         background_tasks.add_task(
             run_pipeline_background,
-            req.symbol,
-            req.timeframe,
+            sym,
+            tf,
             req.trigger_type,
-            req.lookback_days
+            req.lookback_days,
+            req.skip_network_ingest,
         )
         return {
             "status": "QUEUED",
-            "message": f"Pipeline 'medallion_full_sync' dispatched for {req.symbol.upper()} ({req.timeframe})."
+            "message": f"Pipeline dispatched for {sym} ({tf}).",
         }

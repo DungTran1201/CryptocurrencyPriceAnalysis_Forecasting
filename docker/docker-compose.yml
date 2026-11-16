@@ -1,69 +1,195 @@
-version: '3.8'
+# Single-Node Resource-Bounded Docker Compose Profiles
+# Usage:
+#   LITE:     docker compose --profile lite up -d
+#   STANDARD: docker compose --profile standard up -d
+#   EXTENDED: docker compose --profile extended up -d
 
 services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: crypto_platform_nats
+    profiles: ["lite", "standard", "extended"]
+    command: ["-js", "-sd", "/data", "-m", "8222", "-c", "/etc/nats/nats.conf"]
+    volumes:
+      - nats_data:/data
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8222/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
-    container_name: crypto_forecaster_db
+    container_name: crypto_platform_postgres
+    profiles: ["standard", "extended"]
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-      POSTGRES_DB: crypto_forecasting
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-crypto_forecasting}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=64MB"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "max_connections=40"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    mem_limit: 256m
+    cpus: 1.0
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  backend-lite:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: crypto_platform_backend_lite
+    profiles: ["lite"]
+    environment:
+      PLATFORM_PROFILE: lite
+      APP_ENV: production
+      NATS_URL: nats://nats:4222
+      STREAM_EMBEDDED_IN_API: "true"
+      DATABASE_URL: sqlite+aiosqlite:///./data/crypto_market.db
+      SYNC_DATABASE_URL: sqlite:///./data/crypto_market.db
+    depends_on:
+      nats:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - lakehouse_data:/app/data
+    mem_limit: 384m
+    cpus: 1.5
+    restart: unless-stopped
 
   backend:
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
-    container_name: crypto_forecaster_backend
+    container_name: crypto_platform_backend
+    profiles: ["standard", "extended"]
     environment:
-      - APP_ENV=production
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/crypto_forecasting
-      - SYNC_DATABASE_URL=postgresql://postgres:postgrespassword@postgres:5432/crypto_forecasting
+      PLATFORM_PROFILE: ${PLATFORM_PROFILE:-standard}
+      APP_ENV: production
+      NATS_URL: nats://nats:4222
+      STREAM_EMBEDDED_IN_API: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
+      SYNC_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
     depends_on:
       postgres:
+        condition: service_healthy
+      nats:
         condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
-      - model_artifacts:/app/data/models
+      - lakehouse_data:/app/data
+    mem_limit: 512m
+    cpus: 2.0
     restart: unless-stopped
 
-  worker:
+  stream-worker:
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
-    container_name: crypto_forecaster_worker
-    command: ["python", "-m", "backend.app.workers.sync_worker", "300"]
+    container_name: crypto_platform_stream_worker
+    profiles: ["standard", "extended"]
+    command: ["python", "-m", "backend.app.workers.stream_worker"]
     environment:
-      - APP_ENV=production
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/crypto_forecasting
-      - SYNC_DATABASE_URL=postgresql://postgres:postgrespassword@postgres:5432/crypto_forecasting
+      PLATFORM_PROFILE: ${PLATFORM_PROFILE:-standard}
+      APP_ENV: production
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
+      SYNC_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
     depends_on:
       postgres:
         condition: service_healthy
+      nats:
+        condition: service_healthy
     volumes:
-      - model_artifacts:/app/data/models
+      - lakehouse_data:/app/data
+    mem_limit: 320m
+    cpus: 1.5
     restart: unless-stopped
 
   frontend:
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
-    container_name: crypto_forecaster_frontend
+    container_name: crypto_platform_frontend
+    profiles: ["standard", "extended"]
     ports:
       - "80:80"
     depends_on:
       - backend
+    mem_limit: 64m
+    cpus: 0.25
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: crypto_platform_minio
+    profiles: ["extended"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin123}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: crypto_platform_prometheus
+    profiles: ["extended"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    ports:
+      - "9090:9090"
+    mem_limit: 192m
+    cpus: 0.5
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: crypto_platform_grafana
+    profiles: ["extended"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    mem_limit: 192m
+    cpus: 0.5
     restart: unless-stopped
 
 volumes:
+  nats_data:
   postgres_data:
-  model_artifacts:
+  lakehouse_data:
+  minio_data:
+  prom_data:
+  grafana_data:

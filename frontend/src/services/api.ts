@@ -4,7 +4,12 @@ import {
   ForecastRecord,
   ForecastHistoryResponse,
   ModelCard,
-  SystemStatus
+  SystemStatus,
+  SystemResourcesResponse,
+  StreamingStatusResponse,
+  DataCatalogItem,
+  DLQEventItem,
+  IncrementalAnalyticsSnapshot
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -30,6 +35,11 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export function getMarketWebSocketUrl(): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${API_BASE}/ws/market`;
+}
+
 export const api = {
   // Market
   getSymbols: (): Promise<SymbolInfo[]> =>
@@ -46,6 +56,33 @@ export const api = {
         body: JSON.stringify({ symbol, timeframe, lookback_days: lookbackDays })
       }
     ),
+
+  // Streaming & Governance
+  getStreamingStatus: (): Promise<StreamingStatusResponse> =>
+    fetchJson<StreamingStatusResponse>(`${API_BASE}/streaming/status`),
+
+  getDLQEvents: (limit = 50): Promise<DLQEventItem[]> =>
+    fetchJson<DLQEventItem[]>(`${API_BASE}/streaming/dlq?limit=${limit}`),
+
+  flushStreamingBuffer: (): Promise<{ flushed: number; bronze_records?: number; silver_klines?: number }> =>
+    fetchJson(`${API_BASE}/streaming/flush`, { method: 'POST' }),
+
+  replayStreamMessages: (subject = 'market.>', startSeq = 1, maxMsgs = 50): Promise<any> =>
+    fetchJson(`${API_BASE}/streaming/replay`, {
+      method: 'POST',
+      body: JSON.stringify({ subject, start_seq: startSeq, max_msgs: maxMsgs })
+    }),
+
+  getCatalog: (layer?: string): Promise<DataCatalogItem[]> => {
+    const q = layer ? `?layer=${layer}` : '';
+    return fetchJson<DataCatalogItem[]>(`${API_BASE}/governance/catalog${q}`);
+  },
+
+  getStreamCheckpoints: (): Promise<any[]> =>
+    fetchJson(`${API_BASE}/governance/checkpoints`),
+
+  runRetentionCleanup: (): Promise<any> =>
+    fetchJson(`${API_BASE}/governance/retention/run`, { method: 'POST' }),
 
   // Forecasts
   generateForecast: (symbol: string, timeframe: string, horizonSteps = 6): Promise<ForecastRecord> =>
@@ -104,10 +141,22 @@ export const api = {
   getPipelineRunDetails: (runId: string): Promise<any> =>
     fetchJson(`${API_BASE}/pipelines/runs/${runId}`),
 
-  triggerPipeline: (symbol: string, timeframe: string, lookbackDays = 30, syncMode = false) =>
+  triggerPipeline: (
+    symbol: string,
+    timeframe: string,
+    lookbackDays = 30,
+    syncMode = false,
+    skipNetworkIngest = false
+  ) =>
     fetchJson(`${API_BASE}/pipelines/trigger?sync_mode=${syncMode}`, {
       method: 'POST',
-      body: JSON.stringify({ symbol, timeframe, trigger_type: 'MANUAL', lookback_days: lookbackDays })
+      body: JSON.stringify({
+        symbol,
+        timeframe,
+        trigger_type: skipNetworkIngest ? 'RECOMPUTE' : 'MANUAL',
+        lookback_days: lookbackDays,
+        skip_network_ingest: skipNetworkIngest
+      })
     }),
 
   // Data Quality & Lineage
@@ -164,6 +213,9 @@ export const api = {
   getCorrelationMatrix: (symbols = 'BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT', timeframe = '1h', limit = 300): Promise<any> =>
     fetchJson(`${API_BASE}/analytics/correlations?symbols=${symbols}&timeframe=${timeframe}&limit=${limit}`),
 
+  getIncrementalAnalytics: (): Promise<{ snapshots: IncrementalAnalyticsSnapshot[] }> =>
+    fetchJson(`${API_BASE}/analytics/incremental`),
+
   // MLflow Tracking & Experiments
   getTrackingStatus: (): Promise<any> =>
     fetchJson(`${API_BASE}/models/tracking-status`),
@@ -176,5 +228,8 @@ export const api = {
 
   // System
   getSystemStatus: (): Promise<SystemStatus> =>
-    fetchJson<SystemStatus>(`${API_BASE}/system/status`)
+    fetchJson<SystemStatus>(`${API_BASE}/system/status`),
+
+  getSystemResources: (): Promise<SystemResourcesResponse> =>
+    fetchJson<SystemResourcesResponse>(`${API_BASE}/system/resources`)
 };

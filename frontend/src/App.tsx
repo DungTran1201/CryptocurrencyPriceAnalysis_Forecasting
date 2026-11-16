@@ -14,9 +14,11 @@ import {
   Server,
   RefreshCw,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  Radio
 } from 'lucide-react';
 import { DataOpsOverview } from './views/DataOpsOverview';
+import { MarketOverview } from './views/MarketOverview';
 import { PipelineObservatory } from './views/PipelineObservatory';
 import { DataQualityLineage } from './views/DataQualityLineage';
 import { DataExplorer } from './views/DataExplorer';
@@ -31,6 +33,7 @@ import { StatusBadge } from './components/StatusBadge';
 
 export type TabType =
   | 'overview'
+  | 'live'
   | 'pipelines'
   | 'quality'
   | 'explorer'
@@ -125,6 +128,7 @@ export const App: React.FC = () => {
       groupTitle: 'Core Operations',
       items: [
         { id: 'overview', label: 'Data Operations', icon: <Layers size={16} /> },
+        { id: 'live', label: 'Live Market', icon: <Radio size={16} /> },
         { id: 'pipelines', label: 'Pipelines', icon: <Activity size={16} /> },
         { id: 'quality', label: 'Quality & Lineage', icon: <ShieldCheck size={16} /> },
         { id: 'explorer', label: 'Data Explorer', icon: <Database size={16} /> }
@@ -199,9 +203,9 @@ export const App: React.FC = () => {
 
         {/* Sidebar Footer */}
         <div className="sidebar-footer">
-          <div style={{ marginBottom: '0.35rem' }}>Binance Intelligence v2.0</div>
+          <div style={{ marginBottom: '0.35rem' }}>Real-Time Intelligence v3.0</div>
           <div className="engine-spec-pill">
-            <span>FASTAPI • PYTHON 3.12</span>
+            <span>NATS • DUCKDB • FASTAPI</span>
           </div>
         </div>
       </aside>
@@ -260,6 +264,7 @@ export const App: React.FC = () => {
         {/* Main Viewport */}
         <main className="main-viewport" role="main">
           {activeTab === 'overview' && <DataOpsOverview onNavigateTab={(tab) => handleTabSelect(tab as TabType)} />}
+          {activeTab === 'live' && <MarketOverview />}
           {activeTab === 'pipelines' && <PipelineObservatory />}
           {activeTab === 'quality' && <DataQualityLineage />}
           {activeTab === 'explorer' && <DataExplorer />}

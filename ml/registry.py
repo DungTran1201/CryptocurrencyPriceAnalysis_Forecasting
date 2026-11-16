@@ -1,12 +1,9 @@
-"""Model Registry and Evaluation Gating Controller.
+"""Model Registry and Evaluation Gating Controller."""
 
-Manages model versioning, artifact persistence, evaluation gates, and activation.
-"""
-
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, Tuple
 import joblib
 from sqlalchemy import select, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +14,10 @@ from backend.app.models.ml_model import ModelRegistryEntry, ModelEvaluationMetri
 from ml.models import CryptoTimeSeriesModel
 
 logger = get_logger("ModelRegistry")
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class ModelRegistry:
@@ -31,10 +32,10 @@ class ModelRegistry:
         symbol: str,
         timeframe: str,
         horizon_steps: int,
-        model_type: str
+        model_type: str,
     ) -> str:
-        """Create deterministic model identifier with timestamp."""
-        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        """Create deterministic model identifier with UTC timestamp."""
+        ts = _utc_now_naive().strftime("%Y%m%d_%H%M%S")
         return f"{symbol.lower()}_{timeframe}_{horizon_steps}h_{model_type}_{ts}"
 
     def save_artifact(self, model: CryptoTimeSeriesModel, model_id: str) -> str:
@@ -60,7 +61,7 @@ class ModelRegistry:
         train_start: datetime,
         train_end: datetime,
         train_count: int,
-        eval_results: Dict[str, Any]
+        eval_results: Dict[str, Any],
     ) -> Tuple[ModelRegistryEntry, bool]:
         """Apply evaluation gates and register model in database."""
         symbol = symbol.upper()
@@ -71,10 +72,6 @@ class ModelRegistry:
         naive_metrics = eval_results["naive_baseline"]
         improvement = eval_results.get("mae_improvement_pct", 0.0)
 
-        # Evaluation Gates:
-        # 1. Candidate MAE strictly better than Naive Baseline
-        # 2. Improvement margin meets threshold (e.g. >= 1%)
-        # 3. Directional accuracy >= threshold (e.g. >= 50%)
         passes_mae_gate = eval_results.get("beats_naive", False)
         passes_margin_gate = improvement >= (settings.ml.activation_margin_threshold * 100.0)
         passes_dir_gate = candidate_metrics["directional_accuracy"] >= settings.ml.min_direction_accuracy
@@ -82,15 +79,18 @@ class ModelRegistry:
         is_promoted = passes_mae_gate and passes_margin_gate and passes_dir_gate
 
         if is_promoted:
-            # Deactivate previous active model for this symbol/timeframe/horizon
-            deact_stmt = update(ModelRegistryEntry).where(
-                and_(
-                    ModelRegistryEntry.symbol == symbol,
-                    ModelRegistryEntry.timeframe == timeframe,
-                    ModelRegistryEntry.horizon_steps == horizon_steps,
-                    ModelRegistryEntry.is_active == True
+            deact_stmt = (
+                update(ModelRegistryEntry)
+                .where(
+                    and_(
+                        ModelRegistryEntry.symbol == symbol,
+                        ModelRegistryEntry.timeframe == timeframe,
+                        ModelRegistryEntry.horizon_steps == horizon_steps,
+                        ModelRegistryEntry.is_active == True,
+                    )
                 )
-            ).values(is_active=False)
+                .values(is_active=False)
+            )
             await db.execute(deact_stmt)
             logger.info(f"Model {model_id} passed all gates! Promoted to ACTIVE.")
         else:
@@ -99,7 +99,7 @@ class ModelRegistry:
                 f"Dir: {passes_dir_gate}). Registered as inactive candidate."
             )
 
-        # Create registry entry
+        now = _utc_now_naive()
         entry = ModelRegistryEntry(
             model_id=model_id,
             name=f"{symbol} {model.model_type.title()} {horizon_steps}h",
@@ -115,12 +115,11 @@ class ModelRegistry:
             train_sample_count=train_count,
             is_active=is_promoted,
             artifact_path=artifact_path,
-            created_at=datetime.utcnow()
+            created_at=now,
         )
         db.add(entry)
         await db.flush()
 
-        # Record evaluation metrics
         metric = ModelEvaluationMetric(
             model_id=model_id,
             split_type="walk_forward",
@@ -132,7 +131,7 @@ class ModelRegistry:
             naive_mae=naive_metrics["mae"],
             mae_improvement_pct=improvement,
             beats_naive_baseline=passes_mae_gate,
-            evaluated_at=datetime.utcnow()
+            evaluated_at=now,
         )
         db.add(metric)
         await db.commit()
@@ -144,17 +143,21 @@ class ModelRegistry:
         db: AsyncSession,
         symbol: str,
         timeframe: str,
-        horizon_steps: int
+        horizon_steps: int,
     ) -> Optional[Tuple[ModelRegistryEntry, CryptoTimeSeriesModel]]:
         """Retrieve the currently active production model."""
-        stmt = select(ModelRegistryEntry).where(
-            and_(
-                ModelRegistryEntry.symbol == symbol.upper(),
-                ModelRegistryEntry.timeframe == timeframe,
-                ModelRegistryEntry.horizon_steps == horizon_steps,
-                ModelRegistryEntry.is_active == True
+        stmt = (
+            select(ModelRegistryEntry)
+            .where(
+                and_(
+                    ModelRegistryEntry.symbol == symbol.upper(),
+                    ModelRegistryEntry.timeframe == timeframe,
+                    ModelRegistryEntry.horizon_steps == horizon_steps,
+                    ModelRegistryEntry.is_active == True,
+                )
             )
-        ).order_by(ModelRegistryEntry.created_at.desc())
+            .order_by(ModelRegistryEntry.created_at.desc())
+        )
         res = await db.execute(stmt)
         entry = res.scalar_one_or_none()
 

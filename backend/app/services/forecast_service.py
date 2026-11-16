@@ -1,60 +1,51 @@
-"""Forecast generation, persistence, and realization reconciliation service."""
+"""Forecast generation, triggered inference, persistence, and realization reconciliation."""
 
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone
+from typing import Optional
 import pandas as pd
-from sqlalchemy import select, and_, desc
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.config import settings
 from backend.app.core.logging import get_logger
 from backend.app.models.market import Kline
 from backend.app.models.forecast import ForecastRecord
-from backend.app.services.sync_service import BinanceSyncService, get_interval_delta
+from backend.app.services.governance_service import GovernanceService
+from backend.app.services.sync_service import get_interval_delta
 from ml.features import extract_features
-from ml.baselines import NaivePersistenceBaseline, RollingMeanBaseline
+from ml.baselines import RollingMeanBaseline
 from ml.registry import ModelRegistry
 
 logger = get_logger("ForecastService")
 
 
 class ForecastService:
-    """Manages forecast generation, persistence, and realization audit logs."""
+    """Manages forecast generation, triggered stream inference, and realization reconciliation."""
 
     def __init__(self):
         self.registry = ModelRegistry()
-        self.sync_service = BinanceSyncService()
 
     async def get_recent_candles_df(
         self,
         db: AsyncSession,
         symbol: str,
         timeframe: str,
-        limit: int = 150
+        limit: int = 150,
     ) -> pd.DataFrame:
-        """Fetch recent candles as a clean DataFrame sorted chronologically."""
-        stmt = select(Kline).where(
-            and_(
-                Kline.symbol == symbol.upper(),
-                Kline.timeframe == timeframe
-            )
-        ).order_by(Kline.open_time.desc()).limit(limit)
-        
+        """Fetch recent stored candles chronologically without hidden external REST calls."""
+        stmt = (
+            select(Kline)
+            .where(and_(Kline.symbol == symbol.upper(), Kline.timeframe == timeframe))
+            .order_by(Kline.open_time.desc())
+            .limit(limit)
+        )
         res = await db.execute(stmt)
-        klines = res.scalars().all()
+        klines = list(reversed(res.scalars().all()))
 
         if not klines:
-            # Sync fresh batch from Binance if database is empty
-            logger.info(f"Database empty for {symbol} {timeframe}. Triggering instant seed fetch...")
-            await self.sync_service.sync_incremental(db, symbol, timeframe, lookback_days_if_empty=15)
-            res = await db.execute(stmt)
-            klines = res.scalars().all()
-
-        if not klines:
-            raise ValueError(f"Insufficient candle history available for {symbol} {timeframe}")
-
-        # Reverse to chronological order (oldest to newest)
-        klines = list(reversed(klines))
+            raise ValueError(
+                f"No stored candles available for {symbol.upper()} {timeframe}. "
+                "Run market sync or pipeline ingestion before generating forecasts."
+            )
 
         records = [
             {
@@ -63,7 +54,7 @@ class ForecastService:
                 "high": k.high,
                 "low": k.low,
                 "close": k.close,
-                "volume": k.volume
+                "volume": k.volume,
             }
             for k in klines
         ]
@@ -74,53 +65,48 @@ class ForecastService:
         db: AsyncSession,
         symbol: str,
         timeframe: str,
-        horizon_steps: int = 6
+        horizon_steps: int = 6,
     ) -> ForecastRecord:
         """Generate a production forecast and persist immutable record to database."""
         symbol = symbol.upper()
         df = await self.get_recent_candles_df(db, symbol, timeframe, limit=120)
-        
+
         cutoff_candle = df.iloc[-1]
-        cutoff_time = cutoff_candle["open_time"]
+        cutoff_time = cutoff_candle["open_time"].to_pydatetime() if hasattr(cutoff_candle["open_time"], "to_pydatetime") else cutoff_candle["open_time"]
         current_price = float(cutoff_candle["close"])
-        
-        # Calculate target time: cutoff_time + (horizon_steps * interval_delta)
+
         delta = get_interval_delta(timeframe)
         target_time = cutoff_time + (delta * horizon_steps)
 
-        # Check for active registered model
         active_pair = await self.registry.get_active_model(db, symbol, timeframe, horizon_steps)
 
         if active_pair:
             model_entry, model = active_pair
             model_id = model_entry.model_id
             model_ver = model_entry.version
-            
+
             features_df = extract_features(df)
             pred_prices, pred_returns, probs, lower_bounds, upper_bounds = model.predict(features_df)
-            
+
             pred_price = float(pred_prices[-1])
             pred_return = float(pred_returns[-1])
             prob_up = float(probs[-1])
             lower_b = float(lower_bounds[-1])
             upper_b = float(upper_bounds[-1])
         else:
-            # High-reliability fallback: Rolling Mean Baseline
             baseline = RollingMeanBaseline(window=14)
             pred_prices, pred_returns, probs = baseline.predict(df)
-            
+
             model_id = "baseline_sma_14"
             model_ver = "1.0.0"
             pred_price = float(pred_prices[-1])
             pred_return = float(pred_returns[-1])
             prob_up = float(probs[-1])
-            
-            # Simple bounds based on recent ATR
+
             half_width = current_price * 0.02
             lower_b = pred_price - half_width
             upper_b = pred_price + half_width
 
-        # Direction determination
         if abs(pred_return) < 0.001:
             direction = "FLAT"
         elif pred_return > 0:
@@ -128,7 +114,6 @@ class ForecastService:
         else:
             direction = "DOWN"
 
-        # Persist immutable forecast record
         forecast = ForecastRecord(
             model_id=model_id,
             model_version=model_ver,
@@ -146,9 +131,19 @@ class ForecastService:
             lower_bound_price=round(lower_b, 4),
             upper_bound_price=round(upper_b, 4),
             confidence_level=0.95,
-            status="PENDING"
+            status="PENDING",
         )
         db.add(forecast)
+        await db.flush()
+        await GovernanceService.record_lineage_edge(
+            db,
+            source_dataset="gold_feature_sets",
+            target_dataset="forecast_records",
+            transformation=f"inference_{model_id}",
+            records_in=len(df),
+            records_out=1,
+            metadata={"symbol": symbol, "timeframe": timeframe, "horizon_steps": horizon_steps},
+        )
         await db.commit()
         await db.refresh(forecast)
 
@@ -158,32 +153,66 @@ class ForecastService:
         )
         return forecast
 
+    async def try_triggered_forecast(
+        self,
+        db: AsyncSession,
+        symbol: str,
+        timeframe: str,
+        horizon_steps: int = 3,
+    ) -> Optional[ForecastRecord]:
+        """Run triggered inference on closed candle only when >=15 closed bars exist and avoid duplicates."""
+        symbol = symbol.upper()
+        stmt = (
+            select(Kline)
+            .where(and_(Kline.symbol == symbol, Kline.timeframe == timeframe))
+            .order_by(Kline.open_time.desc())
+            .limit(120)
+        )
+        klines = list(reversed((await db.execute(stmt)).scalars().all()))
+        if len(klines) < 15:
+            return None
+
+        cutoff = klines[-1].open_time
+        existing_stmt = select(ForecastRecord.id).where(
+            and_(
+                ForecastRecord.symbol == symbol,
+                ForecastRecord.timeframe == timeframe,
+                ForecastRecord.horizon_steps == horizon_steps,
+                ForecastRecord.data_cutoff_time == cutoff,
+            )
+        ).limit(1)
+        if (await db.execute(existing_stmt)).scalar_one_or_none() is not None:
+            return None
+
+        return await self.generate_forecast(db, symbol, timeframe, horizon_steps=horizon_steps)
+
     async def reconcile_pending_forecasts(self, db: AsyncSession) -> int:
         """Audit and reconcile pending forecasts whose target time has elapsed."""
         now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-        
-        # Query pending forecasts where target_time <= now_utc
+
         stmt = select(ForecastRecord).where(
             and_(
                 ForecastRecord.status == "PENDING",
-                ForecastRecord.target_time <= now_utc
+                ForecastRecord.target_time <= now_utc,
             )
         )
-        res = await db.execute(stmt)
-        pending_list = res.scalars().all()
+        pending_list = (await db.execute(stmt)).scalars().all()
 
         reconciled_count = 0
         for f in pending_list:
-            # Look for candle matching target_time
-            candle_stmt = select(Kline).where(
-                and_(
-                    Kline.symbol == f.symbol,
-                    Kline.timeframe == f.timeframe,
-                    Kline.open_time >= f.target_time
+            candle_stmt = (
+                select(Kline)
+                .where(
+                    and_(
+                        Kline.symbol == f.symbol,
+                        Kline.timeframe == f.timeframe,
+                        Kline.open_time >= f.target_time,
+                    )
                 )
-            ).order_by(Kline.open_time.asc()).limit(1)
-            c_res = await db.execute(candle_stmt)
-            realized_candle = c_res.scalar_one_or_none()
+                .order_by(Kline.open_time.asc())
+                .limit(1)
+            )
+            realized_candle = (await db.execute(candle_stmt)).scalar_one_or_none()
 
             if realized_candle:
                 actual_price = realized_candle.close
@@ -191,23 +220,20 @@ class ForecastService:
                 pct_err = (abs_err / actual_price) * 100.0 if actual_price > 0 else 0.0
 
                 actual_change = actual_price - f.current_price
-                if abs(actual_change / f.current_price) < 0.001:
+                if f.current_price > 0 and abs(actual_change / f.current_price) < 0.001:
                     realized_dir = "FLAT"
                 elif actual_change > 0:
                     realized_dir = "UP"
                 else:
                     realized_dir = "DOWN"
 
-                # Check if direction prediction was correct
-                dir_correct = (f.predicted_direction == realized_dir)
-
                 f.realized_price = round(actual_price, 4)
                 f.realized_direction = realized_dir
                 f.absolute_error = round(abs_err, 4)
                 f.percentage_error = round(pct_err, 4)
-                f.direction_correct = dir_correct
+                f.direction_correct = (f.predicted_direction == realized_dir)
                 f.status = "RECONCILED"
-                f.reconciled_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                f.reconciled_at = _utc_now_naive()
                 reconciled_count += 1
 
         if reconciled_count > 0:
@@ -215,3 +241,7 @@ class ForecastService:
             logger.info(f"Reconciled {reconciled_count} mature forecasts.")
 
         return reconciled_count
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)

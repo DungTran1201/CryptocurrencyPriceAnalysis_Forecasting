@@ -1,19 +1,17 @@
 """Binance Market Data Synchronization Engine.
 
 Features:
-- Primary and fallback Binance endpoints with exponential backoff & jitter
+- Primary and fallback Binance REST endpoints with exponential backoff & jitter
 - Timestamp normalization (milliseconds to UTC datetime)
 - Closed-candle handling (distinguish forming vs closed candles)
-- Checkpoint-based incremental synchronization
-- Historical backfill with pagination
+- Checkpoint-based incremental synchronization + Symbol.last_synced_at updates
+- Dual persistence: Bronze raw archival (zstd JSONL) + Silver Parquet + SQL klines
 - Deterministic gap detection and automated backfilling
-- Idempotent upsert preventing duplicates
 """
 
 import asyncio
 from datetime import datetime, timezone, timedelta
 import random
-import time
 from typing import List, Dict, Any, Optional, Tuple
 import httpx
 from sqlalchemy import select, and_, func
@@ -22,11 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.config import settings
 from backend.app.core.logging import get_logger, PerformanceLogger
 from backend.app.models.market import Symbol, Kline, SyncCheckpoint
+from backend.app.storage.medallion import MedallionStorageManager
 
 logger = get_logger("SyncService")
 perf_logger = PerformanceLogger("SyncService")
 
-# Timeframe to timedelta mapping
 TIMEFRAME_DELTAS = {
     "1m": timedelta(minutes=1),
     "3m": timedelta(minutes=3),
@@ -46,7 +44,7 @@ TIMEFRAME_DELTAS = {
 
 
 def ms_to_datetime(ms: int) -> datetime:
-    """Convert millisecond timestamp to UTC datetime."""
+    """Convert millisecond timestamp to UTC naive datetime."""
     return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).replace(tzinfo=None)
 
 
@@ -62,7 +60,6 @@ def get_interval_delta(timeframe: str) -> timedelta:
     tf_clean = timeframe.lower().replace("min", "m")
     if tf_clean in TIMEFRAME_DELTAS:
         return TIMEFRAME_DELTAS[tf_clean]
-    # Default fallback to 1 hour
     return timedelta(hours=1)
 
 
@@ -74,12 +71,14 @@ class BinanceSyncService:
         primary_url: Optional[str] = None,
         fallback_url: Optional[str] = None,
         timeout: float = 15.0,
-        max_retries: int = 5
+        max_retries: int = 5,
+        medallion: Optional[MedallionStorageManager] = None,
     ):
         self.primary_url = primary_url or settings.sync.binance_api_url
         self.fallback_url = fallback_url or settings.sync.binance_fallback_url
         self.timeout = timeout
         self.max_retries = max_retries
+        self.medallion = medallion or MedallionStorageManager()
 
     async def fetch_klines_raw(
         self,
@@ -87,13 +86,13 @@ class BinanceSyncService:
         interval: str,
         start_time_ms: Optional[int] = None,
         end_time_ms: Optional[int] = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> List[List[Any]]:
         """Fetch raw kline arrays from Binance with exponential backoff & fallback."""
         params: Dict[str, Any] = {
             "symbol": symbol.upper(),
             "interval": interval,
-            "limit": min(limit, 1000)
+            "limit": min(limit, 1000),
         }
         if start_time_ms is not None:
             params["startTime"] = start_time_ms
@@ -111,7 +110,6 @@ class BinanceSyncService:
                     if resp.status_code == 200:
                         return resp.json()
                     elif resp.status_code == 429:
-                        # Rate limit hit: longer sleep
                         sleep_time = (2 ** attempt) + random.uniform(1.0, 3.0)
                         logger.warning(f"Rate limited by Binance (429). Backing off for {sleep_time:.2f}s")
                         await asyncio.sleep(sleep_time)
@@ -133,30 +131,15 @@ class BinanceSyncService:
         self,
         symbol: str,
         timeframe: str,
-        raw_klines: List[List[Any]]
+        raw_klines: List[List[Any]],
     ) -> List[Dict[str, Any]]:
         """Parse raw Binance Kline arrays into validated dictionaries."""
         parsed = []
         now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
         for k in raw_klines:
-            # Binance Kline format:
-            # 0: Open time (ms)
-            # 1: Open
-            # 2: High
-            # 3: Low
-            # 4: Close
-            # 5: Volume
-            # 6: Close time (ms)
-            # 7: Quote asset volume
-            # 8: Number of trades
-            # 9: Taker buy base asset volume
-            # 10: Taker buy quote asset volume
-            # 11: Ignore
             open_dt = ms_to_datetime(int(k[0]))
             close_dt = ms_to_datetime(int(k[6]))
-
-            # Determine whether candle is closed
             is_closed = close_dt <= now_utc
 
             parsed.append({
@@ -180,9 +163,9 @@ class BinanceSyncService:
     async def save_klines_idempotent(
         self,
         db: AsyncSession,
-        klines_data: List[Dict[str, Any]]
+        klines_data: List[Dict[str, Any]],
     ) -> int:
-        """Insert or update klines idempotently, preventing duplicates."""
+        """Insert klines idempotently, preventing duplicates on (symbol, timeframe, open_time)."""
         if not klines_data:
             return 0
 
@@ -190,20 +173,22 @@ class BinanceSyncService:
         timeframe = klines_data[0]["timeframe"]
         open_times = [k["open_time"] for k in klines_data]
 
-        # Query existing open_times in this batch
         stmt = select(Kline.open_time).where(
             and_(
                 Kline.symbol == symbol,
                 Kline.timeframe == timeframe,
-                Kline.open_time.in_(open_times)
+                Kline.open_time.in_(open_times),
             )
         )
         result = await db.execute(stmt)
         existing_times = set(result.scalars().all())
 
         new_records = []
+        seen_in_batch = set()
         for item in klines_data:
-            if item["open_time"] not in existing_times:
+            ot = item["open_time"]
+            if ot not in existing_times and ot not in seen_in_batch:
+                seen_in_batch.add(ot)
                 new_records.append(Kline(**item))
 
         if new_records:
@@ -218,32 +203,38 @@ class BinanceSyncService:
         symbol: str,
         timeframe: str,
         status: str = "SUCCESS",
-        error_msg: Optional[str] = None
+        error_msg: Optional[str] = None,
+        gaps_count: Optional[int] = None,
     ) -> SyncCheckpoint:
-        """Update or create synchronization checkpoint."""
-        # Query checkpoint
+        """Update or create synchronization checkpoint and refresh Symbol.last_synced_at."""
+        symbol = symbol.upper()
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+
         stmt = select(SyncCheckpoint).where(
             and_(
                 SyncCheckpoint.symbol == symbol,
-                SyncCheckpoint.timeframe == timeframe
+                SyncCheckpoint.timeframe == timeframe,
             )
         )
         result = await db.execute(stmt)
         checkpoint = result.scalar_one_or_none()
 
-        # Query stats from Kline table
         stats_stmt = select(
             func.count(Kline.id),
             func.min(Kline.open_time),
-            func.max(Kline.close_time)
+            func.max(Kline.close_time),
         ).where(
             and_(
                 Kline.symbol == symbol,
-                Kline.timeframe == timeframe
+                Kline.timeframe == timeframe,
             )
         )
         stats_res = await db.execute(stats_stmt)
         total, min_open, max_close = stats_res.one()
+
+        if gaps_count is None:
+            gaps = await self.detect_gaps(db, symbol, timeframe)
+            gaps_count = len(gaps)
 
         if not checkpoint:
             checkpoint = SyncCheckpoint(
@@ -254,7 +245,8 @@ class BinanceSyncService:
                 total_candles=total or 0,
                 last_sync_status=status,
                 last_error=error_msg,
-                updated_at=datetime.now(timezone.utc).replace(tzinfo=None)
+                detected_gaps_count=gaps_count,
+                updated_at=now_utc,
             )
             db.add(checkpoint)
         else:
@@ -263,25 +255,58 @@ class BinanceSyncService:
                 checkpoint.last_close_time = max_close
             checkpoint.last_sync_status = status
             checkpoint.last_error = error_msg
-            checkpoint.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            checkpoint.detected_gaps_count = gaps_count
+            checkpoint.updated_at = now_utc
+
+        # Update Symbol.last_synced_at so market freshness & stale status stay truthful
+        sym_res = await db.execute(select(Symbol).where(Symbol.symbol == symbol))
+        sym_obj = sym_res.scalar_one_or_none()
+        if sym_obj:
+            sym_obj.last_synced_at = now_utc
 
         await db.flush()
         return checkpoint
+
+    async def _persist_medallion_batch(
+        self,
+        symbol: str,
+        timeframe: str,
+        raw_batch: List[List[Any]],
+        parsed: List[Dict[str, Any]],
+    ) -> None:
+        """Archive REST batch to Bronze (zstd JSONL) and Silver (Parquet) off the event loop."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        bronze_rows = [
+            {
+                "schema_version": "1.0.0",
+                "source": "binance_rest",
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "ingestion_time": now_iso,
+                "raw_kline": row,
+            }
+            for row in raw_batch
+        ]
+
+        def _write():
+            self.medallion.write_bronze_batch(f"rest_klines_{timeframe}", symbol, bronze_rows)
+            self.medallion.write_silver_klines(symbol, timeframe, parsed)
+
+        await asyncio.to_thread(_write)
 
     async def sync_incremental(
         self,
         db: AsyncSession,
         symbol: str,
         timeframe: str,
-        lookback_days_if_empty: int = 30
+        lookback_days_if_empty: int = 30,
     ) -> Dict[str, Any]:
         """Perform incremental synchronization from last known candle to present."""
         symbol = symbol.upper()
-        # Find latest candle in DB
         stmt = select(func.max(Kline.close_time)).where(
             and_(
                 Kline.symbol == symbol,
-                Kline.timeframe == timeframe
+                Kline.timeframe == timeframe,
             )
         )
         res = await db.execute(stmt)
@@ -291,13 +316,13 @@ class BinanceSyncService:
             start_ms = datetime_to_ms(latest_close) + 1
             logger.info(f"Resuming incremental sync for {symbol} {timeframe} from {latest_close}")
         else:
-            # Initial seed: look back requested days
             start_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=lookback_days_if_empty)
             start_ms = datetime_to_ms(start_dt)
             logger.info(f"Seeding new sync for {symbol} {timeframe} from {start_dt}")
 
         now_ms = datetime_to_ms(datetime.now(timezone.utc).replace(tzinfo=None))
         total_synced = 0
+        total_read = 0
         current_start = start_ms
 
         while current_start < now_ms:
@@ -306,24 +331,28 @@ class BinanceSyncService:
                 interval=timeframe,
                 start_time_ms=current_start,
                 end_time_ms=now_ms,
-                limit=1000
+                limit=1000,
             )
             if not raw_batch:
                 break
 
+            total_read += len(raw_batch)
             parsed = self.parse_kline_payload(symbol, timeframe, raw_batch)
             added = await self.save_klines_idempotent(db, parsed)
             total_synced += added
 
-            # Advance current_start to close_time of last returned candle + 1
+            if settings.sync.save_parquet:
+                try:
+                    await self._persist_medallion_batch(symbol, timeframe, raw_batch, parsed)
+                except Exception as lake_exc:
+                    logger.warning(f"Medallion file persistence warning for {symbol} {timeframe}: {lake_exc}")
+
             last_close_ms = int(raw_batch[-1][6])
             if last_close_ms <= current_start:
-                # Avoid infinite loop if no progress made
                 break
             current_start = last_close_ms + 1
 
             if len(raw_batch) < 1000:
-                # Reached latest market tip
                 break
 
         await self.update_checkpoint(db, symbol, timeframe, status="SUCCESS")
@@ -333,8 +362,9 @@ class BinanceSyncService:
         return {
             "symbol": symbol,
             "timeframe": timeframe,
+            "rows_read": total_read,
             "added_candles": total_synced,
-            "status": "SUCCESS"
+            "status": "SUCCESS",
         }
 
     async def detect_gaps(
@@ -343,16 +373,16 @@ class BinanceSyncService:
         symbol: str,
         timeframe: str,
         start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
+        end_time: Optional[datetime] = None,
     ) -> List[Tuple[datetime, datetime]]:
         """Identify missing time intervals in stored candles."""
         delta = get_interval_delta(timeframe)
-        tolerance = delta * 1.5  # Allow minor tolerance before flagging a gap
+        tolerance = delta * 1.5
 
         query = select(Kline.open_time).where(
             and_(
-                Kline.symbol == symbol,
-                Kline.timeframe == timeframe
+                Kline.symbol == symbol.upper(),
+                Kline.timeframe == timeframe,
             )
         )
         if start_time:
@@ -373,7 +403,6 @@ class BinanceSyncService:
             curr_time = open_times[i]
             diff = curr_time - prev_time
             if diff > tolerance:
-                # A gap exists between prev_time + delta and curr_time
                 gap_start = prev_time + delta
                 gap_end = curr_time - delta
                 gaps.append((gap_start, gap_end))
@@ -384,7 +413,7 @@ class BinanceSyncService:
         self,
         db: AsyncSession,
         symbol: str,
-        timeframe: str
+        timeframe: str,
     ) -> int:
         """Detect and backfill all missing candle gaps."""
         gaps = await self.detect_gaps(db, symbol, timeframe)
@@ -405,7 +434,7 @@ class BinanceSyncService:
                     interval=timeframe,
                     start_time_ms=cur_ms,
                     end_time_ms=end_ms,
-                    limit=1000
+                    limit=1000,
                 )
                 if not raw_batch:
                     break
@@ -413,6 +442,12 @@ class BinanceSyncService:
                 parsed = self.parse_kline_payload(symbol, timeframe, raw_batch)
                 added = await self.save_klines_idempotent(db, parsed)
                 total_filled += added
+
+                if settings.sync.save_parquet:
+                    try:
+                        await self._persist_medallion_batch(symbol, timeframe, raw_batch, parsed)
+                    except Exception:
+                        pass
 
                 last_close_ms = int(raw_batch[-1][6])
                 if last_close_ms <= cur_ms:

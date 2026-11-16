@@ -1,14 +1,32 @@
-"""Structured logging configuration for backend and ML services.
+"""Structured logging configuration for backend, streaming, and ML services.
 
-Preserves Operation, Exception, and Performance tracking patterns with
-clean formatting and performance timing.
+Supports both human-readable text logs and single-line JSON logs without leaking
+raw secrets or credentials.
 """
 
+from datetime import datetime, timezone
 import functools
+import json
 import logging
+import os
 import sys
 import time
 from typing import Any, Callable
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Emit structured JSON logs for machine observability."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=True)
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -17,10 +35,14 @@ def get_logger(name: str) -> logging.Logger:
     if not logger.handlers:
         logger.setLevel(logging.INFO)
         handler = logging.StreamHandler(sys.stdout)
-        formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] [%(name)s]: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
+        log_format = os.getenv("LOG_FORMAT", "text").strip().lower()
+        if log_format == "json":
+            formatter: logging.Formatter = JsonLogFormatter()
+        else:
+            formatter = logging.Formatter(
+                "%(asctime)s [%(levelname)s] [%(name)s]: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         logger.propagate = False
@@ -29,6 +51,7 @@ def get_logger(name: str) -> logging.Logger:
 
 class OperationLogger:
     """Logs system lifecycle and operational events."""
+
     def __init__(self, name: str):
         self._logger = get_logger(name)
 
@@ -47,6 +70,7 @@ class OperationLogger:
 
 class PerformanceLogger:
     """Decorator to measure and log function execution latency."""
+
     def __init__(self, name: str):
         self._logger = get_logger(name)
 

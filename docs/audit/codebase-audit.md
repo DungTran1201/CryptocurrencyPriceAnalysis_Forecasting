@@ -74,8 +74,17 @@
 
 ---
 
-## Residual Risks & Production Caveats
+## Residual Risks, Security Controls & Unresolved Limitations (`v3.0.0`)
 
-1. **Binance Rate Limits**: Incremental sync handles exponential backoff and jitter, but bulk historical backfilling over long windows (e.g. 365 days across many pairs) should be executed with appropriate rate-limit pacing.
-2. **Database Engine**: In production deployments with high concurrent load, PostgreSQL with pgvector / TimescaleDB is recommended over SQLite.
-3. **Clock Skew**: Candle closure timestamps rely on UTC synchronization; NTP synchronization should be active in production containers.
+### Security Controls Implemented (`v3.0.0`)
+1. **Input Validation & Traversal Guards**: Strict symbol regex (`^[A-Z0-9]{2,20}$`), timeframe enum validation (`backend/app/core/security.py`), and root-path containment (`resolve().relative_to(root)`) inside `LocalStorageBackend` (`backend/app/storage/local.py`) prevent path traversal and malformed query injection.
+2. **Optional Admin Authentication**: Mutating operational endpoints (`/api/v1/streaming/flush`, `/streaming/replay`, `/streaming/simulate-disconnect`, `/governance/retention/run`, `/pipelines/trigger`, `/models/train`) enforce constant-time `X-Admin-Token` header / bearer validation when `ADMIN_API_TOKEN` is configured.
+3. **Response Security Headers & Error Shielding**: FastAPI middleware attaches `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and `Permissions-Policy`, while sanitizing client-facing 500 errors so raw tracebacks, filesystem paths, and secrets are never exposed.
+4. **Public Market Feeds Only**: Zero Binance API secrets are required or stored for public WS/REST market data ingestion.
+
+### Unresolved Limitations & Operational Caveats
+1. **Docker & Optional EXTENDED Stack Runtime (`NOT RUN`)**: Docker Desktop was stopped during single-node verification on an 8 GB RAM host (~1.42-1.51 GB free RAM without `.wslconfig` memory caps). `docker/docker-compose.yml` (`lite`, `standard`, `extended`) passed syntax validation (`docker compose config --quiet`), and SQLAlchemy/Alembic schema + SQLite WAL executed live, whereas containerized PostgreSQL, MinIO, Prometheus, and Grafana runtime execution remains unverified on this host.
+2. **Interactive Chrome Visual Inspection (`BLOCKED`)**: Headless/local SPA serving (`GET /`), all REST endpoints, WebSocket push frames (`/api/v1/ws/market`), Vitest unit tests, and TypeScript/Vite production bundling were verified; however, the Chrome DevTools browser agent could not connect because Chrome remote debugging (`DevToolsActivePort` via `chrome://inspect/#remote-debugging`) is disabled on the host.
+3. **Binance Rate Limits & Single-Node Clock Discipline**: Incremental sync handles exponential backoff and jitter, while heavy historical backfilling over wide intervals should remain rate-paced. UTC/NTP clock sync should be enforced in long-running deployments.
+4. **ML Baseline Gating**: Under realistic 30-day 1h data (`665` samples), `gradient_boosting` walk-forward CV accurately rejected promotion (`is_active: false`, `beats_naive_baseline: false`) rather than overfit, leaving conservative `baseline_sma_14` as fallback (`Prediction` outputs remain strictly experimental).
+5. **Quarantined Legacy Prototype**: Deprecated Streamlit/RAG prototypes under `app/` remain excluded from FastAPI runtime paths and unmaintained; see [`docs/10-audit/known-limitations.md`](../10-audit/known-limitations.md) for the complete register.
