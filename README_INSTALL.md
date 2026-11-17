@@ -93,6 +93,12 @@ Open `http://127.0.0.1:8000/`.
    $env:STREAM_EMBEDDED_IN_API = "false"
    .\.venv\Scripts\uvicorn.exe backend.app.main:app --host 127.0.0.1 --port 8000
    ```
+4. Terminal 4 (Optional Standalone Workflow Worker):
+   ```powershell
+   $env:PYTHONPATH = "."
+   $env:PLATFORM_PROFILE = "standard"
+   .\.venv\Scripts\python.exe -m backend.app.workers.workflow_worker
+   ```
 
 ### Option C — Docker Compose Profiles (`lite`, `standard`, `extended`)
 
@@ -124,10 +130,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\recover_platform.ps1 -RunRete
 ## 8. Run Automated Tests & Benchmarks
 
 ```powershell
-# Backend & Streaming & ML & Financial Correctness Suite
+# Backend & Streaming & ML & Financial Correctness Suite (77 Tests)
 $env:PYTHONPATH = "."
 $env:APP_ENV = "testing"
-.\.venv\Scripts\python.exe -m pytest tests/ -v
+.\.venv\Scripts\python.exe -m pytest tests/ -v -m "not system and not performance and not live"
 
 # Frontend Unit Tests & Build
 cd frontend

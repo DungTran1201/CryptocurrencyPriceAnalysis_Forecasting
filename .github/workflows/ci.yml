@@ -2,22 +2,26 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, feat/* ]
   pull_request:
     branches: [ main, master ]
 
 jobs:
   backend-tests:
-    name: Backend, Streaming, Medallion & ML Tests
+    name: Backend, Streaming, Medallion & ML Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
       - name: Install Python dependencies
@@ -25,21 +29,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Alembic migration check
+      - name: Verify config profiles & Alembic migrations
         env:
           PYTHONPATH: "."
           DATABASE_URL: "sqlite+aiosqlite:///./data/ci_test.db"
           SYNC_DATABASE_URL: "sqlite:///./data/ci_test.db"
         run: |
           mkdir -p data
+          python -c "import os; from backend.app.core.config import Settings, PlatformProfile; [Settings.load() for p in PlatformProfile]"
           alembic upgrade head
 
-      - name: Run automated test suite
+      - name: Run unit, integration, and pipeline test suites
         env:
           PYTHONPATH: "."
           APP_ENV: "testing"
         run: |
-          pytest tests/ -v
+          pytest tests/ -m "not system and not performance and not live" -v
 
   frontend-build:
     name: Frontend Typecheck, Tests & Build
@@ -59,10 +64,14 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Run TypeScript typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
       - name: Run frontend unit tests
         working-directory: frontend
         run: npm test
 
-      - name: Typecheck and build bundle
+      - name: Build production bundle
         working-directory: frontend
         run: npm run build

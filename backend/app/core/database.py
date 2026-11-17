@@ -17,13 +17,37 @@ from sqlalchemy.pool import NullPool
 
 from backend.app.core.config import settings
 
-# Ensure local data directory exists for SQLite / checkpoints
-db_path = Path(settings.storage.data_dir)
-if not db_path.is_absolute():
-    db_path = Path(settings.base_dir) / db_path
-db_path.mkdir(parents=True, exist_ok=True)
+
+def normalize_sync_database_url(url: str) -> str:
+    """Normalize sync DB URL for SQLAlchemy/Alembic (PostgreSQL -> postgresql+psycopg://)."""
+    if url.startswith("postgresql+asyncpg://"):
+        return "postgresql+psycopg://" + url[len("postgresql+asyncpg://"):]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
+    if url.startswith("postgresql+psycopg2://"):
+        return "postgresql+psycopg://" + url[len("postgresql+psycopg2://"):]
+    if url.startswith("sqlite+aiosqlite://"):
+        return "sqlite://" + url[len("sqlite+aiosqlite://"):]
+    return url
+
+
+def _ensure_sqlite_parent_dir(url: str) -> None:
+    """Create parent directory for file-backed SQLite DBs outside testing mode."""
+    if settings.app_env == "testing" or ":memory:" in url or "mode=memory" in url:
+        return
+    if ":///" in url:
+        raw_path = url.split(":///", 1)[1].split("?", 1)[0]
+        if raw_path:
+            p = Path(raw_path)
+            if not p.is_absolute():
+                p = Path(settings.base_dir) / p
+            p.parent.mkdir(parents=True, exist_ok=True)
+
 
 _is_sqlite = "sqlite" in settings.database_url
+_sync_database_url = normalize_sync_database_url(settings.sync_database_url)
+if _is_sqlite:
+    _ensure_sqlite_parent_dir(settings.database_url)
 
 # Async Engine (for FastAPI REST endpoints and async consumers)
 if _is_sqlite:
@@ -50,7 +74,7 @@ def _configure_sqlite_pragmas(dbapi_conn, _connection_record):
     try:
         cursor.execute("PRAGMA journal_mode=WAL;")
         cursor.execute("PRAGMA synchronous=NORMAL;")
-        cursor.execute("PRAGMA busy_timeout=5000;")
+        cursor.execute("PRAGMA busy_timeout=15000;")
         cursor.execute("PRAGMA foreign_keys=ON;")
     finally:
         cursor.close()
@@ -70,9 +94,9 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # Sync Engine (for Alembic migrations and synchronous worker utilities)
-if "sqlite" in settings.sync_database_url:
+if "sqlite" in _sync_database_url:
     sync_engine = create_engine(
-        settings.sync_database_url,
+        _sync_database_url,
         echo=False,
         connect_args={"check_same_thread": False, "timeout": 30},
         poolclass=NullPool,
@@ -83,7 +107,7 @@ if "sqlite" in settings.sync_database_url:
         _configure_sqlite_pragmas(dbapi_conn, connection_record)
 else:
     sync_engine = create_engine(
-        settings.sync_database_url,
+        _sync_database_url,
         echo=False,
         pool_size=settings.resources.db_pool_size,
         max_overflow=settings.resources.db_max_overflow,
@@ -100,11 +124,16 @@ Base = declarative_base()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency for injecting request-scoped async database sessions."""
+    """Dependency for injecting request-scoped async database sessions.
+
+    Avoids unconditional commits on read-only GET requests while committing
+    pending ORM mutations for backward compatibility.
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
+            if session.new or session.dirty or session.deleted:
+                await session.commit()
         except Exception:
             await session.rollback()
             raise
@@ -117,7 +146,8 @@ def get_sync_db():
     db = SyncSessionLocal()
     try:
         yield db
-        db.commit()
+        if db.new or db.dirty or db.deleted:
+            db.commit()
     except Exception:
         db.rollback()
         raise
@@ -134,6 +164,10 @@ async def init_db():
         pipeline,
         data_quality,
         governance,
+        lake,
+        workflow,
     )
+    if _is_sqlite:
+        _ensure_sqlite_parent_dir(settings.database_url)
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

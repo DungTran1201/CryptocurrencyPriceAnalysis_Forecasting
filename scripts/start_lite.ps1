@@ -3,7 +3,7 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
 Write-Output "=== Starting Real-Time Financial Intelligence Platform (Profile: LITE) ==="
-powershell -ExecutionPolicy Bypass -File .\scripts\start_nats.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_nats.ps1
 
 $env:PYTHONPATH = "."
 $env:PLATFORM_PROFILE = "lite"
@@ -16,6 +16,9 @@ if (-not (Test-Path "frontend\dist")) {
     Pop-Location
 }
 
-Write-Output "Starting FastAPI + Embedded Stream Runtime on http://127.0.0.1:8000 ..."
-.\.venv\Scripts\uvicorn.exe backend.app.main:app --host 127.0.0.1 --port 8000
-
+try {
+    Write-Output "Starting FastAPI + Embedded Stream Runtime on http://127.0.0.1:8000 ..."
+    .\.venv\Scripts\uvicorn.exe backend.app.main:app --host 127.0.0.1 --port 8000
+} finally {
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop_nats.ps1
+}

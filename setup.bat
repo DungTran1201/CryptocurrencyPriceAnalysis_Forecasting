@@ -81,7 +81,7 @@ if not exist ".env" (
 ) else (
     echo [OK] Existing .env preserved
 )
-for %%D in ("data" "data\bronze" "data\silver" "data\gold" "data\nats") do (
+for %%D in ("data" "data\bronze" "data\silver" "data\gold" "data\nats" "data\warehouse" "data\warehouse\staging" "data\warehouse\snapshots") do (
     if not exist "%%~D" mkdir "%%~D"
 )
 echo [OK] Local Medallion and NATS data directories verified

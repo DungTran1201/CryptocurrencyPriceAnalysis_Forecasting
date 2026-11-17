@@ -73,6 +73,33 @@ class BoundedEventProducer:
                 pass
             self._task = None
 
+        # Spill any remaining queued items to disk spool to guarantee zero event loss (REQ-DP-ING-03)
+        if not self._queue.empty():
+            import json
+            from datetime import datetime, timezone
+            from backend.app.storage import get_data_root
+
+            spool_file = get_data_root() / "dlq" / "producer_spool.jsonl"
+            spool_file.parent.mkdir(parents=True, exist_ok=True)
+            spooled_count = 0
+            with open(spool_file, "a", encoding="utf-8") as f:
+                while not self._queue.empty():
+                    item = self._queue.get_nowait()
+                    spooled_count += 1
+                    f.write(
+                        json.dumps({
+                            "subject": item.subject,
+                            "msg_id": item.msg_id,
+                            "symbol": item.symbol,
+                            "payload": item.payload.decode("utf-8", errors="replace"),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+                        + "\n"
+                    )
+                    self._queue.task_done()
+            if spooled_count > 0:
+                logger.warning("Spool-saved %d undrained events to %s on shutdown", spooled_count, spool_file)
+
     async def enqueue(
         self,
         subject: str,

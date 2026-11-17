@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from sqlalchemy import (
+    BigInteger,
     Column,
     Integer,
     String,
@@ -9,7 +10,6 @@ from sqlalchemy import (
     DateTime,
     Boolean,
     UniqueConstraint,
-    Index
 )
 from backend.app.core.database import Base
 
@@ -57,7 +57,6 @@ class Kline(Base):
 
     __table_args__ = (
         UniqueConstraint("symbol", "timeframe", "open_time", name="uq_symbol_tf_opentime"),
-        Index("ix_kline_lookup", "symbol", "timeframe", "open_time"),
     )
 
 
@@ -68,10 +67,13 @@ class SyncCheckpoint(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     symbol = Column(String(32), nullable=False)
     timeframe = Column(String(16), nullable=False)
+    first_open_time = Column(DateTime, nullable=True)
     last_open_time = Column(DateTime, nullable=True)
     last_close_time = Column(DateTime, nullable=True)
+    last_agg_trade_id = Column(BigInteger, nullable=True)
     total_candles = Column(Integer, default=0, nullable=False)
     last_sync_status = Column(String(32), default="IDLE", nullable=False)
+    completeness_status = Column(String(24), default="UNPOPULATED", nullable=False)
     last_error = Column(String(512), nullable=True)
     detected_gaps_count = Column(Integer, default=0, nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)

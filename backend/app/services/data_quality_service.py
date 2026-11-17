@@ -3,7 +3,7 @@
 from datetime import datetime, timezone, timedelta
 import json
 import math
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,18 @@ from backend.app.services.sync_service import get_interval_delta
 logger = get_logger("DataQualityService")
 
 
+def _parse_naive_utc(val: Any) -> Optional[datetime]:
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.astimezone(timezone.utc).replace(tzinfo=None) if val.tzinfo else val
+    try:
+        dt = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+        return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo else dt
+    except Exception:
+        return None
+
+
 class DataQualityService:
     """Evaluates, records, and reports data quality rules on cryptocurrency records."""
 
@@ -25,10 +37,15 @@ class DataQualityService:
         db: AsyncSession,
         symbol: str,
         timeframe: str,
-        limit: int = 1000,
+        limit: Optional[int] = 1000,
         check_mode: str = "BATCH",
+        commit: bool = True,
     ) -> DataQualityRun:
-        """Run all 10 data quality rules against stored klines for a given symbol & timeframe."""
+        """Run all 10 data quality rules against stored klines for a given symbol & timeframe.
+
+        When `commit=False` (e.g. inside `MedallionStreamConsumer.flush_microbatch`), flushes
+        to the caller's transaction without executing a premature `db.commit()` (REQ-DP-DEL-04).
+        """
         start_time = datetime.now(timezone.utc)
         symbol = symbol.upper()
 
@@ -36,8 +53,9 @@ class DataQualityService:
             select(Kline)
             .where(and_(Kline.symbol == symbol, Kline.timeframe == timeframe))
             .order_by(Kline.open_time.desc())
-            .limit(limit)
         )
+        if limit is not None and limit > 0:
+            stmt = stmt.limit(limit)
         result = await db.execute(stmt)
         klines = list(reversed(result.scalars().all()))
         row_count = len(klines)
@@ -73,7 +91,10 @@ class DataQualityService:
             run.rules_failed = 1
             run.status = "FAILED"
             run.duration_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000.0
-            await db.commit()
+            if commit:
+                await db.commit()
+            else:
+                await db.flush()
             return run
 
         results: List[DataQualityResult] = []
@@ -328,7 +349,10 @@ class DataQualityService:
             run.status = "PASSED"
 
         run.duration_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000.0
-        await db.commit()
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
 
         logger.info(
             f"Evaluated data quality [{run.check_mode}] for {symbol} {timeframe}: "
@@ -337,29 +361,185 @@ class DataQualityService:
         return run
 
     @staticmethod
-    async def get_overview_metrics(db: AsyncSession) -> Dict[str, Any]:
+    async def evaluate_agg_trades(
+        db: AsyncSession,
+        symbol: str,
+        trades: List[Dict[str, Any]],
+        check_mode: str = "STREAM",
+        commit: bool = True,
+    ) -> DataQualityRun:
+        """Evaluate Silver aggregate trade schema, uniqueness, sequence continuity, and temporal validity."""
+        start_time = datetime.now(timezone.utc)
+        symbol = symbol.upper()
+        row_count = len(trades)
+
+        run = DataQualityRun(
+            dataset_name=f"silver_agg_trades_{symbol.lower()}",
+            check_mode=check_mode.upper(),
+            symbol=symbol,
+            timeframe="tick",
+            run_timestamp=start_time.replace(tzinfo=None),
+            evaluated_row_count=row_count,
+            status="PASSED",
+        )
+        db.add(run)
+        await db.flush()
+
+        if row_count == 0:
+            rule_empty = DataQualityResult(
+                run_id=run.id,
+                rule_id="DQ-TRD-VOL-00",
+                rule_name="Aggregate Trades Minimum Row Count",
+                category="COMPLETENESS",
+                severity="ERROR",
+                status="FAIL",
+                failed_records_count=0,
+                sample_failures=None,
+                message=f"No aggregate trades provided for {symbol}.",
+            )
+            db.add(rule_empty)
+            DQ_FAILURES.labels(rule_id="DQ-TRD-VOL-00", symbol=symbol).inc()
+            run.total_rules_evaluated = 1
+            run.rules_passed = 0
+            run.rules_failed = 1
+            run.status = "FAILED"
+            run.duration_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000.0
+            if commit:
+                await db.commit()
+            else:
+                await db.flush()
+            return run
+
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        results: List[DataQualityResult] = []
+
+        # 1. DQ-TRD-SCH-01: Schema, positive price, non-negative qty, valid timestamp
+        sch_failures = 0
+        valid_trades: List[tuple[int, datetime]] = []
+        for t in trades:
+            try:
+                aid = int(t["agg_trade_id"])
+                price = float(t["price"])
+                qty = float(t["quantity"])
+                tdt = _parse_naive_utc(t.get("trade_time"))
+                if aid < 0 or not math.isfinite(price) or price <= 0 or not math.isfinite(qty) or qty < 0 or tdt is None:
+                    sch_failures += 1
+                else:
+                    valid_trades.append((aid, tdt))
+            except Exception:
+                sch_failures += 1
+
+        results.append(DataQualityResult(
+            run_id=run.id,
+            rule_id="DQ-TRD-SCH-01",
+            rule_name="Aggregate Trade Schema & Geometry Validity",
+            category="SCHEMA",
+            severity="CRITICAL",
+            status="PASS" if sch_failures == 0 else "FAIL",
+            failed_records_count=sch_failures,
+            message="All aggregate trades satisfy schema and price/qty bounds." if sch_failures == 0 else f"{sch_failures} trades violate schema or numeric bounds.",
+        ))
+
+        # 2. DQ-TRD-UNI-01: Unique (symbol, agg_trade_id)
+        seen_ids: set[int] = set()
+        dup_samples = []
+        for aid, _ in valid_trades:
+            if aid in seen_ids:
+                if len(dup_samples) < 3:
+                    dup_samples.append({"agg_trade_id": aid})
+            else:
+                seen_ids.add(aid)
+        dup_count = len(valid_trades) - len(seen_ids)
+        results.append(DataQualityResult(
+            run_id=run.id,
+            rule_id="DQ-TRD-UNI-01",
+            rule_name="Unique Aggregate Trade ID (symbol, agg_trade_id)",
+            category="INTEGRITY",
+            severity="CRITICAL",
+            status="PASS" if dup_count == 0 else "FAIL",
+            failed_records_count=dup_count,
+            sample_failures=json.dumps(dup_samples) if dup_samples else None,
+            message="All aggregate trade IDs are unique." if dup_count == 0 else f"{dup_count} duplicate agg_trade_id records detected.",
+        ))
+
+        # 3. DQ-TRD-GAP-01: Sequence continuity (curr_id - prev_id == 1)
+        sorted_ids = sorted(seen_ids)
+        gap_ranges = []
+        missing_trades_total = 0
+        for i in range(1, len(sorted_ids)):
+            diff = sorted_ids[i] - sorted_ids[i - 1]
+            if diff > 1:
+                missing_trades_total += (diff - 1)
+                if len(gap_ranges) < 5:
+                    gap_ranges.append({
+                        "from_id": sorted_ids[i - 1] + 1,
+                        "to_id": sorted_ids[i] - 1,
+                        "missing_count": diff - 1,
+                    })
+        results.append(DataQualityResult(
+            run_id=run.id,
+            rule_id="DQ-TRD-GAP-01",
+            rule_name="Aggregate Trade ID Sequence Continuity",
+            category="CONSISTENCY",
+            severity="WARNING",
+            status="PASS" if missing_trades_total == 0 else "FAIL",
+            failed_records_count=missing_trades_total,
+            sample_failures=json.dumps(gap_ranges) if gap_ranges else None,
+            message="Zero agg_trade_id sequence gaps detected." if missing_trades_total == 0 else f"{missing_trades_total} missing agg_trade_id sequence numbers across {len(gap_ranges)} gap(s).",
+        ))
+
+        # 4. DQ-TRD-FUT-01: Temporal validity (trade_time <= now_utc + 5m)
+        future_count = sum(1 for _, tdt in valid_trades if tdt > (now_utc + timedelta(minutes=5)))
+        results.append(DataQualityResult(
+            run_id=run.id,
+            rule_id="DQ-TRD-FUT-01",
+            rule_name="Trade Timestamp Temporal Validity",
+            category="CONSISTENCY",
+            severity="CRITICAL",
+            status="PASS" if future_count == 0 else "FAIL",
+            failed_records_count=future_count,
+            message="Zero trades have future timestamps." if future_count == 0 else f"{future_count} trades have future timestamps.",
+        ))
+
+        for r in results:
+            if r.status == "FAIL":
+                DQ_FAILURES.labels(rule_id=r.rule_id, symbol=symbol).inc()
+
+        db.add_all(results)
+        run.total_rules_evaluated = len(results)
+        run.rules_passed = sum(1 for r in results if r.status == "PASS")
+        run.rules_failed = sum(1 for r in results if r.status == "FAIL")
+
+        critical_fails = sum(1 for r in results if r.status == "FAIL" and r.severity == "CRITICAL")
+        if critical_fails > 0:
+            run.status = "FAILED"
+        elif run.rules_failed > 0:
+            run.status = "WARNING"
+        else:
+            run.status = "PASSED"
+
+        run.duration_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000.0
+        if commit:
+            await db.commit()
+        else:
+            await db.flush()
+        return run
+
+    @staticmethod
+    async def get_overview_metrics(db: AsyncSession, check_mode: Optional[str] = None) -> Dict[str, Any]:
         """Aggregate data quality metrics from latest run per (symbol, timeframe)."""
-        subq = (
-            select(
-                DataQualityRun.symbol,
-                DataQualityRun.timeframe,
-                func.max(DataQualityRun.run_timestamp).label("max_ts"),
-            )
-            .group_by(DataQualityRun.symbol, DataQualityRun.timeframe)
-            .subquery()
-        )
-        stmt = (
-            select(DataQualityRun)
-            .join(
-                subq,
-                and_(
-                    DataQualityRun.symbol == subq.c.symbol,
-                    DataQualityRun.timeframe == subq.c.timeframe,
-                    DataQualityRun.run_timestamp == subq.c.max_ts,
-                ),
-            )
-        )
-        latest_runs = (await db.execute(stmt)).scalars().all()
+        base_stmt = select(DataQualityRun)
+        if check_mode:
+            base_stmt = base_stmt.where(DataQualityRun.check_mode == check_mode.upper())
+        base_stmt = base_stmt.order_by(DataQualityRun.run_timestamp.desc(), DataQualityRun.id.desc())
+
+        all_runs = (await db.execute(base_stmt)).scalars().all()
+        latest_by_key: Dict[tuple[str, str], DataQualityRun] = {}
+        for r in all_runs:
+            key = (r.symbol, r.timeframe)
+            if key not in latest_by_key:
+                latest_by_key[key] = r
+        latest_runs = list(latest_by_key.values())
 
         total_rules = sum(r.total_rules_evaluated for r in latest_runs)
         passed_rules = sum(r.rules_passed for r in latest_runs)

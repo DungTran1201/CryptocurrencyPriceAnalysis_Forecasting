@@ -39,6 +39,9 @@ class CanonicalAggTradeEvent(BaseModel):
         return self
 
 
+VALID_TIMEFRAMES = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"}
+
+
 class CanonicalKlineEvent(BaseModel):
     """Canonical normalized candlestick bar event (forming or closed)."""
     schema_version: str = Field(default=CANONICAL_EVENT_SCHEMA_VERSION)
@@ -66,8 +69,12 @@ class CanonicalKlineEvent(BaseModel):
     def _validate_ohlc(self) -> "CanonicalKlineEvent":
         self.symbol = self.symbol.upper()
         self.timeframe = self.timeframe.lower()
+        if self.timeframe not in VALID_TIMEFRAMES:
+            raise ValueError(f"Unsupported timeframe: {self.timeframe!r}")
         self.open_time = ensure_utc_naive(self.open_time)
         self.close_time = ensure_utc_naive(self.close_time)
+        if self.open_time > self.close_time:
+            raise ValueError("open_time must not exceed close_time")
         self.event_time = ensure_utc_naive(self.event_time)
         self.ingestion_time = ensure_utc_naive(self.ingestion_time)
         if self.high < self.low or self.high < self.open or self.high < self.close:

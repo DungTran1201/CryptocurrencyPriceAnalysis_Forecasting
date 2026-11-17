@@ -37,3 +37,32 @@ ml:
   walk_forward_folds: 4
   activation_margin_threshold: 0.01
   min_direction_accuracy: 0.50
+
+workflow:
+  poll_interval_sec: 2.0
+  lease_ttl_sec: 60
+  heartbeat_interval_sec: 15
+  reaper_interval_sec: 15
+  max_attempts_default: 3
+  graceful_shutdown_sec: 15.0
+  memory_throttle_pct: 90.0
+
+warehouse:
+  enabled: true
+  warehouse_dir: "./data/warehouse"
+  staging_filename: "dw_staging.duckdb"
+  reader_grace_ttl_sec: 60
+  query_timeout_ms: 5000
+
+hot_state:
+  backend: "nats_kv"
+  kv_bucket: "hot_state"
+  heartbeat_bucket: "worker_heartbeats"
+  kv_ttl_sec: 300.0
+  heartbeat_ttl_sec: 15.0
+  l1_cache_ttl_sec: 2.0
+
+serving:
+  control_timeout_sec: 5.0
+  heartbeat_interval_sec: 2.0
+  closed_bar_inference_queue_max: 32

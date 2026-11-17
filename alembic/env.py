@@ -1,11 +1,12 @@
 """Alembic database migration environment."""
 
+import os
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 from backend.app.core.config import settings
-from backend.app.core.database import Base
+from backend.app.core.database import Base, normalize_sync_database_url
 from backend.app.models import (  # noqa: F401
     market,
     forecast,
@@ -13,10 +14,13 @@ from backend.app.models import (  # noqa: F401
     pipeline,
     data_quality,
     governance,
+    lake,
+    workflow,
 )
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.sync_database_url)
+_raw_sync_url = os.getenv("SYNC_DATABASE_URL") or os.getenv("DATABASE_URL") or settings.sync_database_url
+config.set_main_option("sqlalchemy.url", normalize_sync_database_url(_raw_sync_url))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

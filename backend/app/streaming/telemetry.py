@@ -300,3 +300,92 @@ class PipelineTelemetryTracker:
             return "ACTIVE"
         return "IDLE"
 
+
+def serialize_worker_heartbeat(
+    *,
+    worker_id: str,
+    role: str,
+    pid: int,
+    rss_mb: float,
+    cpu_percent: float,
+    status: str = "ALIVE",
+    stream_stats: Optional[Dict[str, Any]] = None,
+    pipeline_flow: Optional[Dict[str, Any]] = None,
+    workflow_stats: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Serialize a uniform cross-process worker heartbeat payload for NATS KV."""
+    return {
+        "worker_id": worker_id,
+        "role": role,
+        "pid": pid,
+        "status": status,
+        "rss_mb": round(float(rss_mb), 2),
+        "cpu_percent": round(float(cpu_percent), 2),
+        "stream_stats": stream_stats or {},
+        "pipeline_flow": pipeline_flow,
+        "workflow_stats": workflow_stats or {},
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def merge_worker_snapshots(
+    heartbeats: Optional[Dict[str, Dict[str, Any]]],
+    *,
+    stale_after_sec: float = 15.0,
+    now_utc: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Aggregate worker heartbeat payloads honestly, marking absent or aged heartbeats STALE/UNAVAILABLE."""
+    now = now_utc or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    if not heartbeats:
+        return {
+            "status": "UNAVAILABLE",
+            "active_workers": 0,
+            "workers": {},
+            "pipeline_flow": None,
+            "checked_at": now.isoformat(),
+        }
+
+    workers_out: Dict[str, Dict[str, Any]] = {}
+    active_count = 0
+    latest_flow: Optional[Dict[str, Any]] = None
+
+    for key, payload in heartbeats.items():
+        if not isinstance(payload, dict):
+            continue
+        raw_ts = payload.get("updated_at")
+        age_sec: Optional[float] = None
+        is_stale = True
+        if raw_ts:
+            try:
+                parsed = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                age_sec = max(0.0, (now - parsed).total_seconds())
+                is_stale = age_sec > stale_after_sec
+            except ValueError:
+                is_stale = True
+
+        w_status = "STALE" if is_stale else str(payload.get("status", "ALIVE"))
+        if not is_stale:
+            active_count += 1
+        if payload.get("pipeline_flow") and (latest_flow is None or not is_stale):
+            latest_flow = payload["pipeline_flow"]
+
+        workers_out[key] = {
+            **payload,
+            "state": w_status,
+            "heartbeat_age_sec": round(age_sec, 2) if age_sec is not None else None,
+        }
+
+    overall_status = "ALIVE" if active_count > 0 else ("STALE" if workers_out else "UNAVAILABLE")
+    return {
+        "status": overall_status,
+        "active_workers": active_count,
+        "workers": workers_out,
+        "pipeline_flow": latest_flow,
+        "checked_at": now.isoformat(),
+    }
+

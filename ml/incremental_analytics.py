@@ -2,7 +2,7 @@
 
 Maintains bounded per-symbol rolling state with exact mathematical parity against
 vectorized batch reference calculations in `ml.features` and `AnalyticsService`.
-Supports JSON checkpoint serialization for restart recovery.
+Supports atomic JSON checkpoint serialization and idempotent trade/bar recovery.
 """
 
 from collections import deque
@@ -10,11 +10,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
+import uuid
 import numpy as np
 import pandas as pd
 
+from backend.app.core.logging import get_logger
+from backend.app.core.metrics import PROCESSING_FAILURES
 from ml.features import (
     compute_sma,
     compute_ema,
@@ -22,6 +26,8 @@ from ml.features import (
     compute_bollinger_bands,
     compute_macd,
 )
+
+logger = get_logger("IncrementalAnalytics")
 
 PERIODS_PER_YEAR: Dict[str, int] = {
     "1m": 365 * 24 * 60,
@@ -72,7 +78,8 @@ class IncrementalSymbolState:
     max_drawdown_pct: float = 0.0
     current_drawdown_pct: float = 0.0
 
-    # Live aggTrade ticker state
+    # Live aggTrade ticker state (persisted for idempotent crash/redelivery recovery)
+    last_agg_trade_id: Optional[int] = None
     live_price: Optional[float] = None
     live_trade_qty: Optional[float] = None
     live_trade_time: Optional[str] = None
@@ -88,8 +95,28 @@ class IncrementalSymbolState:
         if self.log_returns.maxlen != self.max_bars:
             self.log_returns = deque(self.log_returns, maxlen=self.max_bars)
 
-    def update_trade(self, price: float, qty: float, trade_time: datetime) -> Dict[str, Any]:
-        """Update intrabar live ticker & live trade VWAP in O(1) without recomputing history."""
+    def update_trade(
+        self,
+        price: float,
+        qty: float,
+        trade_time: datetime,
+        agg_trade_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Update intrabar live ticker & live trade VWAP in O(1) idempotently."""
+        if agg_trade_id is not None:
+            aid = int(agg_trade_id)
+            if self.last_agg_trade_id is not None and aid <= self.last_agg_trade_id:
+                return {
+                    "symbol": self.symbol,
+                    "live_price": self.live_price,
+                    "live_trade_qty": self.live_trade_qty,
+                    "live_trade_time": self.live_trade_time,
+                    "live_trades_count": self.live_trades_count,
+                    "live_vwap": round(self.live_vwap_pv / self.live_vwap_vol, 4) if self.live_vwap_vol > 0 else None,
+                    "last_agg_trade_id": self.last_agg_trade_id,
+                }
+            self.last_agg_trade_id = aid
+
         self.live_price = float(price)
         self.live_trade_qty = float(qty)
         self.live_trade_time = trade_time.isoformat()
@@ -110,6 +137,7 @@ class IncrementalSymbolState:
             "live_trade_time": self.live_trade_time,
             "live_trades_count": self.live_trades_count,
             "live_vwap": round(self.live_vwap_pv / self.live_vwap_vol, 4) if self.live_vwap_vol > 0 else None,
+            "last_agg_trade_id": self.last_agg_trade_id,
         }
 
     def update_closed_bar(
@@ -269,6 +297,7 @@ class IncrementalSymbolState:
             "bar_count": self.bar_count,
             "last_open_time": self.last_open_time,
             "last_close": self.last_close,
+            "last_agg_trade_id": self.last_agg_trade_id,
             "live_price": self.live_price,
             "live_trade_time": self.live_trade_time,
             "live_trades_count": self.live_trades_count,
@@ -325,12 +354,20 @@ class IncrementalSymbolState:
             "running_peak": self.running_peak,
             "max_drawdown_pct": self.max_drawdown_pct,
             "current_drawdown_pct": self.current_drawdown_pct,
+            "last_agg_trade_id": self.last_agg_trade_id,
+            "live_price": self.live_price,
+            "live_trade_qty": self.live_trade_qty,
+            "live_trade_time": self.live_trade_time,
+            "live_trades_count": self.live_trades_count,
+            "live_vwap_pv": self.live_vwap_pv,
+            "live_vwap_vol": self.live_vwap_vol,
         }
 
     @classmethod
     def from_checkpoint(cls, data: Dict[str, Any]) -> "IncrementalSymbolState":
         """Restore incremental rolling state from checkpoint JSON."""
         max_bars = int(data.get("max_bars", 300))
+        raw_aid = data.get("last_agg_trade_id")
         obj = cls(
             symbol=data["symbol"],
             timeframe=data.get("timeframe", "1m"),
@@ -355,17 +392,32 @@ class IncrementalSymbolState:
             running_peak=data.get("running_peak"),
             max_drawdown_pct=float(data.get("max_drawdown_pct", 0.0)),
             current_drawdown_pct=float(data.get("current_drawdown_pct", 0.0)),
+            last_agg_trade_id=int(raw_aid) if raw_aid is not None else None,
+            live_price=float(data["live_price"]) if data.get("live_price") is not None else None,
+            live_trade_qty=float(data["live_trade_qty"]) if data.get("live_trade_qty") is not None else None,
+            live_trade_time=data.get("live_trade_time"),
+            live_trades_count=int(data.get("live_trades_count", 0)),
+            live_vwap_pv=float(data.get("live_vwap_pv", 0.0)),
+            live_vwap_vol=float(data.get("live_vwap_vol", 0.0)),
         )
         return obj
 
 
 class IncrementalAnalyticsEngine:
-    """Manages per-(symbol, timeframe) incremental state and persisted checkpoints."""
+    """Manages per-(symbol, timeframe) incremental state and atomic persisted checkpoints."""
 
-    def __init__(self, checkpoint_dir: Optional[Path] = None, max_bars: int = 300):
+    def __init__(
+        self,
+        checkpoint_dir: Optional[Path] = None,
+        max_bars: int = 300,
+        strict_checkpoints: bool = False,
+    ):
         self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
         self.max_bars = max_bars
+        self.strict_checkpoints = strict_checkpoints
         self.states: Dict[Tuple[str, str], IncrementalSymbolState] = {}
+        self.checkpoint_load_errors: int = 0
+        self.last_checkpoint_error: Optional[str] = None
 
     def get_or_create(self, symbol: str, timeframe: str = "1m") -> IncrementalSymbolState:
         key = (symbol.upper(), timeframe.lower())
@@ -377,20 +429,44 @@ class IncrementalAnalyticsEngine:
                         data = json.loads(ckpt_file.read_text(encoding="utf-8"))
                         self.states[key] = IncrementalSymbolState.from_checkpoint(data)
                         return self.states[key]
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        self.checkpoint_load_errors += 1
+                        self.last_checkpoint_error = f"{ckpt_file.name}: {exc}"
+                        PROCESSING_FAILURES.labels(stage="analytics_checkpoint").inc()
+                        logger.error(f"Corrupt analytics checkpoint {ckpt_file}: {exc}")
+                        try:
+                            corrupt_path = ckpt_file.with_name(f"{ckpt_file.name}.corrupt")
+                            os.replace(ckpt_file, corrupt_path)
+                        except OSError:
+                            pass
+                        if self.strict_checkpoints:
+                            raise ValueError(f"Corrupt analytics checkpoint {ckpt_file.name}: {exc}") from exc
             self.states[key] = IncrementalSymbolState(symbol=key[0], timeframe=key[1], max_bars=self.max_bars)
         return self.states[key]
 
     def save_checkpoints(self) -> int:
+        """Persist checkpoints atomically via .tmp + fsync + os.replace (REQ-DP-DEL-06)."""
         if not self.checkpoint_dir:
             return 0
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         saved = 0
         for (sym, tf), st in self.states.items():
             target = self.checkpoint_dir / f"analytics_{sym}_{tf}.json"
-            target.write_text(json.dumps(st.to_checkpoint()), encoding="utf-8")
-            saved += 1
+            tmp_path = target.with_name(f".{target.name}.{uuid.uuid4().hex[:8]}.tmp")
+            payload = json.dumps(st.to_checkpoint()).encode("utf-8")
+            try:
+                with open(tmp_path, "wb") as f:
+                    f.write(payload)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, target)
+                saved += 1
+            finally:
+                if tmp_path.exists():
+                    try:
+                        tmp_path.unlink()
+                    except OSError:
+                        pass
         return saved
 
     def all_snapshots(self) -> List[Dict[str, Any]]:
@@ -507,4 +583,3 @@ def compute_batch_reference_metrics(df: pd.DataFrame, timeframe: str = "1h") -> 
             "drawdown_pct": drawdown_pct,
         },
     }
-

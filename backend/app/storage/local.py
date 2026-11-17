@@ -1,11 +1,12 @@
 """Local filesystem storage backend with atomic writes and path traversal guards."""
 
+from datetime import datetime, timezone
 import os
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional
 import uuid
 
-from backend.app.storage.base import StorageBackend
+from backend.app.storage.base import StorageBackend, StorageObjectMeta
 
 
 class LocalStorageBackend(StorageBackend):
@@ -31,7 +32,8 @@ class LocalStorageBackend(StorageBackend):
     def write_bytes(self, key: str, data: bytes) -> int:
         target = self._safe_path(key)
         target.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        # Keep tmp suffix short to avoid exceeding Windows MAX_PATH (260 chars) on deep folder trees
+        tmp_path = target.with_name(f".{uuid.uuid4().hex[:10]}.tmp")
         try:
             with open(tmp_path, "wb") as f:
                 f.write(data)
@@ -54,23 +56,54 @@ class LocalStorageBackend(StorageBackend):
     def exists(self, key: str) -> bool:
         return self._safe_path(key).exists()
 
-    def list_keys(self, prefix: str = "", suffix: str = "") -> List[str]:
+    def head_object(self, key: str) -> Optional[StorageObjectMeta]:
+        target = self._safe_path(key)
+        if not target.exists() or not target.is_file():
+            return None
+        try:
+            st = target.stat()
+            rel = target.relative_to(self.root_dir).as_posix()
+            mtime_utc = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).replace(tzinfo=None)
+            return StorageObjectMeta(
+                key=rel,
+                size_bytes=st.st_size,
+                last_modified_utc=mtime_utc,
+                etag=None,
+            )
+        except OSError:
+            return None
+
+    def list_objects(self, prefix: str = "", suffix: str = "") -> List[StorageObjectMeta]:
         base = self._safe_path(prefix) if prefix else self.root_dir
         if not base.exists():
             return []
-        keys: List[str] = []
+        objs: List[StorageObjectMeta] = []
         if base.is_file():
-            rel = base.relative_to(self.root_dir).as_posix()
-            if not suffix or rel.endswith(suffix):
-                return [rel]
+            meta = self.head_object(base.relative_to(self.root_dir).as_posix())
+            if meta and (not suffix or meta.key.endswith(suffix)):
+                return [meta]
             return []
         for entry in base.rglob("*"):
             if entry.is_file() and not entry.name.startswith("."):
                 rel = entry.relative_to(self.root_dir).as_posix()
-                if not suffix or rel.endswith(suffix):
-                    keys.append(rel)
-        keys.sort()
-        return keys
+                if suffix and not rel.endswith(suffix):
+                    continue
+                try:
+                    st = entry.stat()
+                    mtime_utc = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).replace(tzinfo=None)
+                    objs.append(StorageObjectMeta(
+                        key=rel,
+                        size_bytes=st.st_size,
+                        last_modified_utc=mtime_utc,
+                        etag=None,
+                    ))
+                except OSError:
+                    continue
+        objs.sort(key=lambda o: o.key)
+        return objs
+
+    def list_keys(self, prefix: str = "", suffix: str = "") -> List[str]:
+        return [o.key for o in self.list_objects(prefix=prefix, suffix=suffix)]
 
     def delete(self, key: str) -> bool:
         target = self._safe_path(key)
@@ -80,26 +113,14 @@ class LocalStorageBackend(StorageBackend):
         return False
 
     def stat_prefix(self, prefix: str = "") -> Dict[str, Any]:
-        keys = self.list_keys(prefix=prefix)
-        total_bytes = 0
-        oldest_mtime = None
-        newest_mtime = None
-        for k in keys:
-            p = self._safe_path(k)
-            try:
-                st = p.stat()
-                total_bytes += st.st_size
-                if oldest_mtime is None or st.st_mtime < oldest_mtime:
-                    oldest_mtime = st.st_mtime
-                if newest_mtime is None or st.st_mtime > newest_mtime:
-                    newest_mtime = st.st_mtime
-            except OSError:
-                pass
+        objs = self.list_objects(prefix=prefix)
+        total_bytes = sum(o.size_bytes for o in objs)
+        oldest_mtime = min((o.last_modified_utc.replace(tzinfo=timezone.utc).timestamp() for o in objs), default=None)
+        newest_mtime = max((o.last_modified_utc.replace(tzinfo=timezone.utc).timestamp() for o in objs), default=None)
         return {
             "prefix": prefix,
-            "file_count": len(keys),
+            "file_count": len(objs),
             "total_bytes": total_bytes,
             "oldest_mtime": oldest_mtime,
             "newest_mtime": newest_mtime,
         }
-

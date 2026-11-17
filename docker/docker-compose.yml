@@ -1,18 +1,23 @@
 # Single-Node Resource-Bounded Docker Compose Profiles
 # Usage:
-#   LITE:     docker compose --profile lite up -d
-#   STANDARD: docker compose --profile standard up -d
-#   EXTENDED: docker compose --profile extended up -d
+#   LITE:     PLATFORM_PROFILE=lite docker compose --profile lite up -d
+#   STANDARD: PLATFORM_PROFILE=standard docker compose --profile standard up -d
+#   EXTENDED: PLATFORM_PROFILE=extended docker compose --profile extended up -d
 
 services:
   nats:
     image: nats:2.10-alpine
     container_name: crypto_platform_nats
     profiles: ["lite", "standard", "extended"]
-    command: ["-js", "-sd", "/data", "-m", "8222", "-c", "/etc/nats/nats.conf"]
+    environment:
+      PLATFORM_PROFILE: ${PLATFORM_PROFILE:-standard}
+    entrypoint:
+      - "/bin/sh"
+      - "-c"
+      - "CONF=/etc/nats/nats-$${PLATFORM_PROFILE}.conf; [ -f \"$$CONF\" ] || CONF=/etc/nats/nats.conf; exec nats-server -js -sd /data -m 8222 -c \"$$CONF\""
     volumes:
       - nats_data:/data
-      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - ./nats:/etc/nats:ro
     ports:
       - "4222:4222"
       - "8222:8222"
@@ -60,6 +65,7 @@ services:
       dockerfile: docker/Dockerfile.backend
     container_name: crypto_platform_backend_lite
     profiles: ["lite"]
+    command: ["sh", "-c", "alembic upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
     environment:
       PLATFORM_PROFILE: lite
       APP_ENV: production
@@ -74,7 +80,7 @@ services:
       - "8000:8000"
     volumes:
       - lakehouse_data:/app/data
-    mem_limit: 384m
+    mem_limit: 320m
     cpus: 1.5
     restart: unless-stopped
 
@@ -84,13 +90,14 @@ services:
       dockerfile: docker/Dockerfile.backend
     container_name: crypto_platform_backend
     profiles: ["standard", "extended"]
+    command: ["sh", "-c", "alembic upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
     environment:
       PLATFORM_PROFILE: ${PLATFORM_PROFILE:-standard}
       APP_ENV: production
       NATS_URL: nats://nats:4222
       STREAM_EMBEDDED_IN_API: "false"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
-      SYNC_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
+      SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,7 +107,7 @@ services:
       - "8000:8000"
     volumes:
       - lakehouse_data:/app/data
-    mem_limit: 512m
+    mem_limit: 384m
     cpus: 2.0
     restart: unless-stopped
 
@@ -116,16 +123,40 @@ services:
       APP_ENV: production
       NATS_URL: nats://nats:4222
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
-      SYNC_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
+      SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
     depends_on:
-      postgres:
+      backend:
         condition: service_healthy
       nats:
         condition: service_healthy
     volumes:
       - lakehouse_data:/app/data
-    mem_limit: 320m
+    mem_limit: 256m
     cpus: 1.5
+    restart: unless-stopped
+
+  workflow-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: crypto_platform_workflow_worker
+    profiles: ["standard", "extended"]
+    command: ["python", "-m", "backend.app.workers.workflow_worker"]
+    environment:
+      PLATFORM_PROFILE: ${PLATFORM_PROFILE:-standard}
+      APP_ENV: production
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
+      SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_local_dev}@postgres:5432/${POSTGRES_DB:-crypto_forecasting}
+    depends_on:
+      backend:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    volumes:
+      - lakehouse_data:/app/data
+    mem_limit: 256m
+    cpus: 1.0
     restart: unless-stopped
 
   frontend:

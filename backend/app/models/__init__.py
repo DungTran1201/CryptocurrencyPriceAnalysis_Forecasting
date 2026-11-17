@@ -11,6 +11,17 @@ from backend.app.models.governance import (
     DeadLetterEvent,
     StreamCheckpoint,
 )
+from backend.app.models.lake import (
+    BatchLedger,
+    LakeSnapshot,
+    LakeManifestFile,
+    WarehouseSnapshot,
+)
+from backend.app.models.workflow import (
+    WorkflowRun,
+    WorkflowTask,
+    WorkflowSchedule,
+)
 
 __all__ = [
     "Symbol",
@@ -27,4 +38,11 @@ __all__ = [
     "DataLineageEdge",
     "DeadLetterEvent",
     "StreamCheckpoint",
+    "BatchLedger",
+    "LakeSnapshot",
+    "LakeManifestFile",
+    "WarehouseSnapshot",
+    "WorkflowRun",
+    "WorkflowTask",
+    "WorkflowSchedule",
 ]

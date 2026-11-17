@@ -3,7 +3,7 @@
 **Project:** Resource-Efficient Real-Time Financial Data Intelligence Platform  
 **Repository:** `https://github.com/DungTran1201/CryptocurrencyPriceAnalysis_Forecasting`  
 **Development Branch:** `feat/realtime-data-platform` (branched from `main` @ `f02164e1cac081343520517687ef9aa2b4057168`)  
-**Last Updated:** 2026-11-16T22:47:00+07:00  
+**Last Updated:** 2026-11-17T15:00:00+07:00  
 
 ---
 
@@ -25,14 +25,16 @@
 | **Phase 11** | Monitoring and Deployment | **COMPLETED** | `/metrics`, `/api/v1/system/resources`, Compose profiles syntax-validated, LITE/STANDARD benchmarks executed |
 | **Phase 12** | Testing and Optimization | **COMPLETED** | 42/42 backend pytest passed (inc. live NATS JetStream), 5/5 frontend tests passed |
 | **Phase 13** | Live Acceptance | **COMPLETED (Partial Visual Check)** | Live Binance WS->NATS->Medallion->DuckDB->Analytics->ML->REST/WS->`/metrics` passed; Chrome DevTools visual click-through `BLOCKED` (`DevToolsActivePort` missing) |
-| **Phase 14** | Final Regression and Delivery | **COMPLETED** | `README.md`, `docs/audit/codebase-audit.md`, `docs/10-audit/final-*.md`, `known-limitations.md` completed and final test regression re-verified |
+| **Phase 14** | Final Regression and Delivery | **COMPLETED** | `README.md`, `docs/audit/codebase-audit.md`, `docs/10-audit/final-*.md`, `known-limitations.md` completed |
+| **Phase 15 (DP)** | **Data Plane Production Upgrade (Spec, Build & Verification)** | **COMPLETED & VERIFIED** | **54 specification documents** under `docs/data-plane/`, **15 Work Items** executed across Waves 0-3; **77/77 tests passed**, DuckDB Star Schema warehouse, SQL workflow engine, two-phase deduplication, decoupled serving bridge |
 
 ---
 
-## Verified Final Test & Benchmark Snapshots
+## Verified Final Test & Benchmark Snapshots (Post Data Plane Upgrade)
 
-- **Pytest Suite:** `42 passed in 7.10s` (including `test_live_nats_jetstream_publish_consume_nak_replay` against live `nats-server.exe`)
-- **Frontend Unit Tests:** `5 passed` (`node --test src/utils/formatters.test.ts`)
-- **Frontend Build:** `tsc && vite build` succeeded in `1.63s` (`dist/assets/index-S9u3m-1q.js` `286.76 kB`)
-- **LITE Benchmark:** RSS `226.43 MB` (cap `450 MB`), `30,365.7 events/s`, NATS pub `0.137 ms/msg`, Bronze zstd `25.44x` compression, DuckDB Silver read `47.71 ms`
-- **STANDARD Benchmark:** RSS `232.53 MB` (cap `950 MB`), `37,673.1 events/s`, NATS pub `0.133 ms/msg`, DuckDB Silver read `37.53 ms`
+- **Pytest Suite:** **`77 passed, 1 deselected in 13.14s`** (`.venv\Scripts\python.exe -m pytest tests/ -v -m "not system and not performance and not live"`)
+- **Frontend Unit Tests:** **`5 passed in 119ms`** (`npm test` in `frontend/`)
+- **Frontend Build:** **`tsc && vite build` succeeded in 2.27s** (0 TypeScript errors)
+- **LITE Benchmark:** RSS `249.95 MB` (budget `450 MB`), `15,112.4 events/s`, NATS pub `0.232 ms/msg`, Bronze zstd `25.85x` compression, DuckDB Silver read `66.16 ms`
+- **STANDARD Benchmark:** RSS `253.99 MB` (budget `950 MB`), `17,402.9 events/s`, NATS pub `0.244 ms/msg`, DuckDB Silver read `48.00 ms`
+- **Production Readiness Matrix:** 19/19 gates satisfied (18 `PASS`, 1 `NOT_APPLICABLE` for containerized services on native workstation).

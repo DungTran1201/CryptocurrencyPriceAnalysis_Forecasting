@@ -18,11 +18,25 @@ if (-not (Test-Path $NatsExe)) {
 
 New-Item -ItemType Directory -Force -Path $StoreDir | Out-Null
 
-# Check if already listening
+# Check if already listening and verify JetStream + storage limits
 $listening = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if ($listening) {
-    Write-Output "NATS JetStream already listening on port $Port (PID $($listening.OwningProcess | Select-Object -First 1))."
-    exit 0
+    $ownerPid = ($listening.OwningProcess | Select-Object -First 1)
+    try {
+        $jsz = Invoke-RestMethod -Uri "http://127.0.0.1:$HttpPort/jsz" -TimeoutSec 2
+        if (-not $jsz.config) {
+            throw "Port $Port is listening (PID $ownerPid), but JetStream is NOT enabled on http://127.0.0.1:$HttpPort/jsz."
+        }
+        $runningMemMb = [math]::Round(($jsz.config.max_memory / 1MB), 1)
+        $runningFileMb = [math]::Round(($jsz.config.max_storage / 1MB), 1)
+        if ($runningFileMb -lt $MaxFileMb -or $runningMemMb -lt $MaxMemMb) {
+            Write-Warning "Running NATS JetStream (PID $ownerPid) has caps mem=${runningMemMb}MB/file=${runningFileMb}MB (< requested ${MaxMemMb}MB/${MaxFileMb}MB). Restart via run.bat --stop to apply new caps."
+        }
+        Write-Output "NATS JetStream already listening on port $Port (PID $ownerPid, mem=${runningMemMb}MB, file=${runningFileMb}MB)."
+        exit 0
+    } catch {
+        throw "Port $Port is occupied by PID $ownerPid and JetStream health check at http://127.0.0.1:$HttpPort/jsz failed: $($_.Exception.Message)"
+    }
 }
 
 $storePosix = $StoreDir.Replace("\", "/")

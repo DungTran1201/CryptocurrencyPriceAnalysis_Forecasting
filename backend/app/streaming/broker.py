@@ -171,34 +171,56 @@ class NatsJetStreamBroker(MessageBroker):
         self._nc: Any = None
         self._js: Any = None
         self._connected: bool = False
+        self._connect_lock = asyncio.Lock()
+        self._conn_epoch: int = 0
 
     async def connect(self) -> None:
         import nats
 
-        if self._nc is not None and self._nc.is_connected:
-            self._connected = True
-            return
+        async with self._connect_lock:
+            if self._nc is not None and self._nc.is_connected:
+                self._connected = True
+                return
 
-        async def _disconnected_cb():
+            self._conn_epoch += 1
+            epoch = self._conn_epoch
+
+            async def _disconnected_cb():
+                if self._conn_epoch == epoch:
+                    self._connected = False
+                    logger.warning("Disconnected from NATS JetStream")
+
+            async def _reconnected_cb():
+                if self._conn_epoch == epoch:
+                    self._connected = True
+                    logger.info("Reconnected to NATS JetStream")
+
+            self._nc = await nats.connect(
+                servers=[self.nats_url],
+                connect_timeout=5,
+                reconnect_time_wait=2,
+                max_reconnect_attempts=-1,
+                disconnected_cb=_disconnected_cb,
+                reconnected_cb=_reconnected_cb,
+            )
+            self._js = self._nc.jetstream()
+            self._connected = True
+            await self._ensure_streams()
+            logger.info(f"Connected to NATS JetStream at {self.nats_url} (stream={self.stream_name})")
+
+    async def close(self) -> None:
+        async with self._connect_lock:
+            self._conn_epoch += 1
             self._connected = False
-            logger.warning("Disconnected from NATS JetStream")
-
-        async def _reconnected_cb():
-            self._connected = True
-            logger.info("Reconnected to NATS JetStream")
-
-        self._nc = await nats.connect(
-            servers=[self.nats_url],
-            connect_timeout=5,
-            reconnect_time_wait=2,
-            max_reconnect_attempts=-1,
-            disconnected_cb=_disconnected_cb,
-            reconnected_cb=_reconnected_cb,
-        )
-        self._js = self._nc.jetstream()
-        self._connected = True
-        await self._ensure_streams()
-        logger.info(f"Connected to NATS JetStream at {self.nats_url} (stream={self.stream_name})")
+            if self._nc is not None:
+                try:
+                    await self._nc.drain()
+                    await self._nc.close()
+                except Exception:
+                    pass
+                self._nc = None
+                self._js = None
+            logger.info("Closed NATS JetStream connection cleanly")
 
     async def _ensure_streams(self) -> None:
         from nats.js.api import StreamConfig, StorageType, RetentionPolicy

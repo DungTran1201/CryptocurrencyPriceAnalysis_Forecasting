@@ -52,23 +52,37 @@ async def test_observability_metrics_and_resources_endpoints(api_client):
 
 
 @pytest.mark.asyncio
-async def test_analytics_parameter_validation_and_admin_token(api_client, monkeypatch):
-    """Verify strict validation on analytics routes and optional X-Admin-Token enforcement."""
+async def test_analytics_parameter_validation_and_admin_token(api_client, isolated_data_dir, monkeypatch):
+    """Verify strict validation on analytics routes and optional X-Admin-Token enforcement in isolated tmp storage."""
+    import os
+    import time
+    from pathlib import Path
+
     r_bad_sym = await api_client.get("/api/v1/analytics/returns?symbol=BAD!!&timeframe=1h")
     assert r_bad_sym.status_code == 400
 
     r_bad_tf = await api_client.get("/api/v1/analytics/volatility?symbol=BTCUSDT&timeframe=badtf")
     assert r_bad_tf.status_code == 400
 
+    # Verify TEST-ISO redirection & seed an expired artifact strictly in isolated tmp storage
+    assert Path(settings.storage.data_dir).resolve() == isolated_data_dir.resolve()
+    expired_bronze = isolated_data_dir / "bronze" / "expired_test.jsonl.zst"
+    expired_bronze.parent.mkdir(parents=True, exist_ok=True)
+    expired_bronze.write_bytes(b"expired-test-artifact")
+    expired_ts = time.time() - (40 * 86400)
+    os.utime(expired_bronze, (expired_ts, expired_ts))
+
     # Admin token enforcement when configured
     monkeypatch.setattr(settings, "admin_api_token", "secret-ops-token")
     r_unauth = await api_client.post("/api/v1/governance/retention/run")
     assert r_unauth.status_code == 401
+    assert expired_bronze.exists()
 
     r_auth = await api_client.post(
         "/api/v1/governance/retention/run",
         headers={"X-Admin-Token": "secret-ops-token"},
     )
     assert r_auth.status_code == 200
-    assert "deleted_files" in r_auth.json()
+    assert r_auth.json()["deleted_files"] >= 1
+    assert not expired_bronze.exists()
 

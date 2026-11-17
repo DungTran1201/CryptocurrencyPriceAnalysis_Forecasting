@@ -1,21 +1,19 @@
 """Real resource & throughput benchmark script for LITE and STANDARD profiles."""
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
 import tempfile
 import time
 import numpy as np
-import pandas as pd
 import psutil
 
 from backend.app.core.config import PlatformProfile, settings
 from backend.app.storage.local import LocalStorageBackend
 from backend.app.storage.medallion import MedallionStorageManager
-from backend.app.streaming.broker import InMemoryBroker, NatsJetStreamBroker
-from backend.app.streaming.normalizer import normalize_binance_ws_payload
+from backend.app.streaming.broker import NatsJetStreamBroker
 from ml.incremental_analytics import IncrementalSymbolState, compute_batch_reference_metrics
 
 
@@ -29,7 +27,7 @@ async def benchmark_profile(profile: PlatformProfile) -> dict:
     proc.cpu_percent(interval=None)
     rss_start = _rss_mb()
 
-    # 1. Generate synthetic realistic workload (1000 aggTrade + 500 kline events)
+    # 1. Generate synthetic realistic workload (1000 aggTrade + 300 kline events for LITE)
     n_trades = 1000 if profile == PlatformProfile.LITE else 2500
     n_bars = 300 if profile == PlatformProfile.LITE else 500
 
@@ -104,9 +102,12 @@ async def benchmark_profile(profile: PlatformProfile) -> dict:
         compute_batch_reference_metrics(silver_df, timeframe="1m")
         batch_analytics_ms = (time.perf_counter() - t_a0) * 1000.0
 
-    # 3. Live NATS JetStream publish benchmark (if listening)
+    # 3. Live NATS JetStream publish + Memory KV benchmark (isolated temp stream/bucket)
     nats_pub_ms = None
+    nats_kv_put_ms = None
     try:
+        from nats.js.api import KeyValueConfig, StorageType
+
         broker = NatsJetStreamBroker(
             "nats://127.0.0.1:4222",
             stream_name="MARKET_EVENTS_BENCH",
@@ -115,9 +116,25 @@ async def benchmark_profile(profile: PlatformProfile) -> dict:
         broker._subject_prefix = "benchmkt"
         await broker.connect()
         t_n0 = time.perf_counter()
-        for i in range(100):
+        for _ in range(100):
             await broker.publish("benchmkt.aggtrade.BENCH", b'{"bench":1}')
         nats_pub_ms = round(((time.perf_counter() - t_n0) * 1000.0) / 100.0, 3)
+
+        kv = await broker._js.create_key_value(
+            KeyValueConfig(
+                bucket="bench_hot_kv",
+                history=1,
+                ttl=10.0,
+                max_bytes=2 * 1024 * 1024,
+                storage=StorageType.MEMORY,
+            )
+        )
+        t_kv0 = time.perf_counter()
+        for i in range(50):
+            await kv.put(f"bench.{i}", b'{"price":65000.0}')
+        nats_kv_put_ms = round(((time.perf_counter() - t_kv0) * 1000.0) / 50.0, 3)
+        await broker._js.delete_key_value("bench_hot_kv")
+
         for stream_name in ("MARKET_EVENTS_BENCH", "MARKET_DLQ_BENCH"):
             try:
                 await broker._js.delete_stream(stream_name)
@@ -126,6 +143,7 @@ async def benchmark_profile(profile: PlatformProfile) -> dict:
         await broker.close()
     except Exception:
         nats_pub_ms = None
+        nats_kv_put_ms = None
 
     rss_end = _rss_mb()
     cpu_pct = proc.cpu_percent(interval=None)
@@ -146,6 +164,7 @@ async def benchmark_profile(profile: PlatformProfile) -> dict:
         "gold_materialize_ms": round(gold_ms, 2),
         "batch_analytics_ms": round(batch_analytics_ms, 2),
         "nats_avg_publish_ms": nats_pub_ms,
+        "nats_kv_mem_avg_put_ms": nats_kv_put_ms,
     }
 
 

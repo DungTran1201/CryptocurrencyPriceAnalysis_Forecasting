@@ -6,6 +6,7 @@ from sqlalchemy import select, and_, func, desc, cast, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
+from backend.app.core.security import require_admin_if_configured
 from backend.app.models.forecast import ForecastRecord
 from backend.app.schemas.forecast import (
     ForecastGenerateRequest,
@@ -25,7 +26,8 @@ forecast_service = ForecastService()
 @router.post("/generate", response_model=ForecastRecordSchema)
 async def generate_forecast(
     payload: ForecastGenerateRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_admin_if_configured),
 ):
     """Generate a model inference forecast and save an immutable forecast record."""
     try:
@@ -38,7 +40,7 @@ async def generate_forecast(
         return record
     except ValueError as ve:
         logger.warning(f"Validation error during forecast generation: {ve}")
-        raise HTTPException(status_code=400, detail=f"Inference request invalid: {str(ve)}")
+        raise HTTPException(status_code=400, detail="Inference request invalid: check input parameters or dataset sufficiency.")
     except Exception as e:
         logger.error(f"Inference failed for {payload.symbol} {payload.timeframe}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Forecast inference encountered an internal server error.")
@@ -100,7 +102,10 @@ async def list_forecasts(
 
 
 @router.post("/reconcile")
-async def trigger_reconciliation(db: AsyncSession = Depends(get_db)):
+async def trigger_reconciliation(
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_admin_if_configured),
+):
     """Trigger realization check for mature pending forecasts against actual realized candles."""
     count = await forecast_service.reconcile_pending_forecasts(db)
     return {"status": "SUCCESS", "reconciled_count": count}

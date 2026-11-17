@@ -76,7 +76,8 @@ goto :parse_args
 
 :args_done
 if "%STOP_ONLY%"=="1" (
-    echo [INFO] Stopping local NATS JetStream daemon...
+    echo [INFO] Stopping local worker processes and NATS JetStream daemon...
+    call :stop_workers
     powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\scripts\stop_nats.ps1"
     exit /b 0
 )
@@ -146,9 +147,15 @@ if errorlevel 1 (
     goto :fail
 )
 
+if /i not "%PROFILE%"=="lite" (
+    echo [INFO] Launching decoupled workers for profile '%PROFILE%'...
+    call :start_workers
+    if errorlevel 1 goto :fail
+)
+
 if "%OPEN_BROWSER%"=="1" call :launch_browser
 
-echo [4/4] Starting FastAPI + Embedded Streaming Runtime + Static Dashboard...
+echo [4/4] Starting FastAPI + Static Dashboard ^(profile=%PROFILE%^)...
 echo.
 echo   Dashboard : http://%HOST%:%PORT%/
 echo   API Docs  : http://%HOST%:%PORT%/docs
@@ -161,10 +168,19 @@ echo ===========================================================================
 set "APP_EXIT=%ERRORLEVEL%"
 
 echo.
-echo [INFO] FastAPI exited ^(code %APP_EXIT%^). Cleaning up NATS JetStream...
+echo [INFO] FastAPI exited ^(code %APP_EXIT%^). Cleaning up workers and NATS JetStream...
+call :stop_workers
 powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\scripts\stop_nats.ps1"
 if not "%APP_EXIT%"=="0" goto :fail
 goto :finish
+
+:start_workers
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $py='%REPO_ROOT%\.venv\Scripts\python.exe'; if (Test-Path '%REPO_ROOT%\backend\app\workers\stream_worker.py') { $p = Start-Process -FilePath $py -ArgumentList '-m','backend.app.workers.stream_worker' -WorkingDirectory '%REPO_ROOT%' -WindowStyle Hidden -PassThru; Set-Content -Path '%REPO_ROOT%\data\stream_worker.pid' -Value $p.Id; Write-Output ('Started stream_worker PID ' + $p.Id) }; if (Test-Path '%REPO_ROOT%\backend\app\workers\workflow_worker.py') { $w = Start-Process -FilePath $py -ArgumentList '-m','backend.app.workers.workflow_worker' -WorkingDirectory '%REPO_ROOT%' -WindowStyle Hidden -PassThru; Set-Content -Path '%REPO_ROOT%\data\workflow_worker.pid' -Value $w.Id; Write-Output ('Started workflow_worker PID ' + $w.Id) }"
+exit /b %ERRORLEVEL%
+
+:stop_workers
+powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue'; foreach ($pf in @('%REPO_ROOT%\data\stream_worker.pid','%REPO_ROOT%\data\workflow_worker.pid')) { if (Test-Path $pf) { $id = (Get-Content $pf | Select-Object -First 1).Trim(); if ($id -match '^\d+$') { Stop-Process -Id ([int]$id) }; Remove-Item $pf -Force } }"
+exit /b 0
 
 :launch_browser
 echo [INFO] Scheduling browser launch once http://%HOST%:%PORT%/api/v1/health is ready...

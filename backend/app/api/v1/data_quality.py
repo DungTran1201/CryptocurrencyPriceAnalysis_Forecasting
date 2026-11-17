@@ -7,6 +7,7 @@ from sqlalchemy import select, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
+from backend.app.core.security import require_admin_if_configured
 from backend.app.models.data_quality import DataQualityRun, DataQualityResult
 from backend.app.services.data_quality_service import DataQualityService
 
@@ -122,7 +123,8 @@ async def get_run_details(run_id: str, db: AsyncSession = Depends(get_db)) -> Di
 @router.post("/evaluate", summary="Execute data quality audit on demand")
 async def trigger_evaluation(
     req: RunEvaluationRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_admin_if_configured),
 ) -> Dict[str, Any]:
     """Runs the 10 data quality rules on the selected symbol/interval immediately."""
     run = await DataQualityService.evaluate_klines(

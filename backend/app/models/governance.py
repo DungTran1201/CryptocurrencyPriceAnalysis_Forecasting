@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 import uuid
 from sqlalchemy import (
+    BigInteger,
     Column,
     Integer,
     String,
@@ -30,12 +31,14 @@ class DataCatalogEntry(Base):
     data_type = Column(String(32), nullable=False)  # JSONL_ZSTD, PARQUET, SQL_TABLE, JOBLIB
     source = Column(String(64), nullable=False)
     partition_spec = Column(String(128), nullable=True)
-    row_count = Column(Integer, default=0, nullable=False)
-    size_bytes = Column(Integer, default=0, nullable=False)
+    row_count = Column(BigInteger, default=0, nullable=False)
+    size_bytes = Column(BigInteger, default=0, nullable=False)
     storage_location = Column(String(256), nullable=False)
     owner = Column(String(64), default="data-platform", nullable=False)
     retention_policy = Column(String(64), nullable=False)
     version = Column(String(32), default="1.0.0", nullable=False)
+    active_snapshot_id = Column(String(36), nullable=True)
+    schema_hash = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=_utc_now_naive, nullable=False)
     updated_at = Column(DateTime, default=_utc_now_naive, onupdate=_utc_now_naive, nullable=False)
 
@@ -87,9 +90,9 @@ class StreamCheckpoint(Base):
     symbol = Column(String(32), nullable=False)
     stream_type = Column(String(32), nullable=False)
     last_event_time = Column(DateTime, nullable=True)
-    last_stream_seq = Column(Integer, default=0, nullable=False)
-    processed_count = Column(Integer, default=0, nullable=False)
-    error_count = Column(Integer, default=0, nullable=False)
+    last_stream_seq = Column(BigInteger, default=0, nullable=False)
+    processed_count = Column(BigInteger, default=0, nullable=False)
+    error_count = Column(BigInteger, default=0, nullable=False)
     status = Column(String(24), default="ACTIVE", nullable=False)
     state_json = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=_utc_now_naive, onupdate=_utc_now_naive, nullable=False)

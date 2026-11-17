@@ -1,8 +1,19 @@
 """Abstract Storage Backend contract for Medallion Bronze, Silver, and Gold layers."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional
+
+
+@dataclass(frozen=True)
+class StorageObjectMeta:
+    """Backend-agnostic metadata for a stored object (Local FS or S3/MinIO)."""
+    key: str
+    size_bytes: int
+    last_modified_utc: datetime
+    etag: Optional[str] = None
 
 
 class StorageBackend(ABC):
@@ -29,6 +40,14 @@ class StorageBackend(ABC):
         """List relative keys matching prefix and optional suffix sorted ascending."""
 
     @abstractmethod
+    def list_objects(self, prefix: str = "", suffix: str = "") -> List[StorageObjectMeta]:
+        """List object metadata matching prefix and optional suffix sorted ascending by key."""
+
+    @abstractmethod
+    def head_object(self, key: str) -> Optional[StorageObjectMeta]:
+        """Return object metadata for key if it exists, otherwise None."""
+
+    @abstractmethod
     def delete(self, key: str) -> bool:
         """Delete object by key if it exists."""
 
@@ -39,4 +58,3 @@ class StorageBackend(ABC):
     def local_path(self, key: str) -> Path:
         """Optional filesystem path for local backends (DuckDB/PyArrow direct read)."""
         raise NotImplementedError("Backend does not expose direct POSIX paths")
-

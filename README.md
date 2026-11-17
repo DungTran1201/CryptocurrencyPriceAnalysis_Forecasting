@@ -323,7 +323,7 @@ CryptocurrencyPriceAnalysis_Forecasting/
 │   ├── docker-compose.yml                # Multi-profile compose configuration
 │   ├── Dockerfile.backend                # Multi-stage Python 3.12 container
 │   └── Dockerfile.frontend               # Nginx frontend distribution container
-├── tests/                                # Comprehensive automated test suite (43 Pytest tests)
+├── tests/                                # Comprehensive automated test suite (77 Pytest tests)
 ├── setup.bat                             # One-click Windows setup script
 ├── run.bat                               # One-click Windows launch and control script
 ├── requirements.txt                      # Pinned Python backend dependencies
@@ -586,14 +586,14 @@ The backend exposes **38 HTTP REST routes**, **1 WebSocket streaming gateway**, 
 
 Every code modification is verified through automated backend tests, frontend type checks, and resource benchmarks:
 
-### 1. Backend Pytest Suite (43 Tests Passed)
-The backend test suite covers API response contracts, empty-candle schema edge cases, NATS JetStream integration, 10 DQ rules, incremental analytics parity, and security headers:
+### 1. Backend Pytest Suite (77 Tests Passed)
+The backend test suite covers API response contracts, empty-candle schema edge cases, NATS JetStream integration, 10 DQ rules, incremental analytics parity, two-phase deduplication, DuckDB Star Schema warehouse, SQL durable workflows, decoupled serving bridge, and security headers:
 ```powershell
 $env:PYTHONPATH = "."
 $env:APP_ENV = "testing"
-.\.venv\Scripts\python.exe -m pytest tests/ -v
+.\.venv\Scripts\python.exe -m pytest tests/ -v -m "not system and not performance and not live"
 ```
-*Result: `43 passed in 8.18s` (0 failed, 0 skipped).*
+*Result: `77 passed, 1 deselected in 13.14s` (0 failed, 100% green).*
 
 ### 2. Frontend Unit Tests & Production Build
 ```powershell
@@ -602,22 +602,22 @@ npm test
 npm run build
 cd ..
 ```
-*Result: `5 passed in 196ms`, `tsc && vite build` built in 1.86s (`dist/assets/index-RriEwakT.js` 298.12 kB).*
+*Result: `5 passed in 119ms`, `tsc && vite build` built in 2.27s.*
 
 ### 3. Resource & Throughput Benchmark
 Measures actual throughput and memory consumption across `lite` and `standard` profiles:
 ```powershell
 $env:PYTHONPATH = "."
-.\.venv\Scripts\python.exe scripts\benchmark_platform.py --profile lite
+.\.venv\Scripts\python.exe scripts\benchmark_platform.py
 ```
 
 **Verified Benchmark Measurements:**
-- **Streaming Throughput**: 29,400 to 36,800 events/sec processed through incremental analytics.
-- **NATS JetStream Latency**: Average publish latency 0.13 ms to 0.18 ms.
-- **Bronze Compression**: Raw JSONL compressed via `zstd` with a **20x to 25x ratio** (10 ms write latency).
-- **Silver Columnar Parquet**: Parquet write time 8.5 ms to 10.9 ms.
-- **DuckDB Analytical Query**: Columnar aggregation across 500 candles completed in 38 ms to 53 ms.
-- **System Memory Footprint**: Process RSS 201 MB idle, peaking at ~232 MB during heavy streaming.
+- **Streaming Throughput**: 15,112 to 17,402 events/sec processed through incremental analytics.
+- **NATS JetStream Latency**: Average publish latency 0.23 ms to 0.24 ms; Memory KV put 0.19 ms to 0.20 ms.
+- **Bronze Compression**: Raw JSONL compressed via `zstd` with a **22.5x to 25.8x ratio** (11 ms write latency).
+- **Silver Columnar Parquet**: Parquet write time 9.0 ms to 19.2 ms.
+- **DuckDB Analytical Query**: Columnar aggregation across candles completed in 48 ms to 66 ms.
+- **System Memory Footprint**: Process RSS 225 MB idle, peaking at ~254 MB under load (well within 450 MB / 950 MB budgets).
 
 ---
 

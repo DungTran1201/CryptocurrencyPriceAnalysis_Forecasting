@@ -175,6 +175,7 @@ async def test_consumer_medallion_microbatch_dedup_and_dlq(tmp_path: Path):
     await engine.dispose()
 
 
+@pytest.mark.system
 @pytest.mark.asyncio
 async def test_live_nats_jetstream_publish_consume_nak_replay():
     """Live Integration Test against running NATS JetStream on 127.0.0.1:4222."""

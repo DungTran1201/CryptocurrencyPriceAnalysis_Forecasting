@@ -59,6 +59,7 @@ class BinanceWebSocketIngestor:
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._ws: Any = None
+        self._gap_heal_lock = asyncio.Lock()
 
         self.connected = False
         self.active_endpoint: Optional[str] = None
@@ -211,11 +212,14 @@ class BinanceWebSocketIngestor:
                 self._ws = None
 
     async def _safe_gap_heal(self) -> None:
-        try:
-            if self.on_reconnect_gap_heal:
-                await self.on_reconnect_gap_heal()
-        except Exception as exc:
-            logger.warning(f"Post-reconnect REST gap heal failed: {exc}")
+        if self._gap_heal_lock.locked():
+            return
+        async with self._gap_heal_lock:
+            try:
+                if self.on_reconnect_gap_heal:
+                    await self.on_reconnect_gap_heal()
+            except Exception as exc:
+                logger.warning(f"Post-reconnect REST gap heal failed: {exc}")
 
     def stats(self) -> Dict[str, Any]:
         return {
