@@ -1,6 +1,7 @@
 """Durable SQL workflow orchestration models (runs, child tasks, leases, and schedules)."""
 
 from datetime import datetime, timezone
+from typing import Optional
 import uuid
 from sqlalchemy import (
     BigInteger,

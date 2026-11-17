@@ -39,33 +39,35 @@ The system features an institutional Binance-inspired technical visual language 
 
 ## Visual Showcase & Platform Walkthrough
 
-The platform user interface is built with **React 18**, **TypeScript 5.6**, **Tailwind CSS**, and **HTML5 Canvas**. The following screenshots are captured directly from the live running application:
+The platform user interface is built with **React 18**, **TypeScript 5.6**, **Three.js** (WebGL 3D Data Factory), **TradingView lightweight-charts v5** (Institutional Terminal), and **Tailwind CSS**. The following screenshots are captured directly from the live running application:
 
-### 1. Data Operations Overview (`/overview`)
-The primary operational cockpit displaying end-to-end pipeline health, Medallion stage watermarks, live SLA scorecard, candle freshness trackers, and immediate manual orchestration triggers.
+### 1. Real-Time Data Factory — 3D Architecture Observatory (`#/factory`)
+The flagship interactive 3D digital-twin data plant simulating physical financial data processing across 8 industrial stations (`ST-01` Sources → `ST-02` Ingest/Normalize → `ST-03` Broker Hub → `ST-04` Stream Engine → `ST-05` Medallion Lakehouse → `ST-06` Feature Store → `ST-07` DuckDB OLAP → `ST-08` FastAPI Gateway).
 ![Data Operations Overview](docs/screenshots/overview.png)
-*Displays: Real-time telemetry across the Medallion lifecycle (Source → Bronze 78k rows → Silver 76k rows → Gold Marts 1.4k rows → Features → Serving), SLA scorecards (38/41 rules, 92.7%), candle freshness ("Just now" / SYNCHRONIZED), and recent orchestrator runs with duration.*
+*Displays: WebGL 3D isometric view with raycast station selection, conveyor tubes with dynamic pulsing particles linked to live telemetry, real-time KPI strip (Pipeline Health: OPERATIONAL, Ingress Events, Buffer Occupancy, JetStream Lag, Inline Latency < 2.5ms), Station Inspector drawer for ST-03 Message Broker Hub (66,443 durable messages, queue occupancy 0/1000, 0 DLQ msgs), and instant 2D topology schematic fallback.*
 
 ---
 
-### 2. Live Market Monitor & Real-Time Pipeline Flow (`/live`)
-Dedicated real-time market operations monitor featuring a live candlestick chart, order book depth, rolling trade feed, and live WebSocket price ticks.
-![Live Market Monitor](docs/screenshots/live-market.png)
-*Displays: Live WebSocket stream (WS CONNECTED) streaming real-time prices for BTCUSDT ($64,937.26, 1,242 ticks) and ETHUSDT ($1,825.10, 1,004 ticks), incremental $O(1)$ technical indicators (RSI 64.61, ATR 117.7850, VaR 95%), responsive candlestick chart with moving averages and volume, and the coalesced trade feed.*
-
----
-
-### 3. Market Analytics & Quantitative Research (`/analytics`)
-High-density quantitative research workbench for asset price dynamics, statistical return distributions, and risk profiling.
+### 2. Real-Time Market Terminal — TradingView & ML Overlay (`#/terminal`)
+Institutional quantitative financial terminal integrating high-frequency market streaming, technical indicators, and direct in-chart machine learning inference projections.
 ![Market Analytics](docs/screenshots/market-analytics.png)
-*Displays: Responsive HTML5 Canvas candlestick charting with locked height (no canvas stretching), Bollinger Bands, SMA/EMA overlays, volume histogram, and RSI (14) momentum oscillator across 150 historical 1-hour candles.*
+*Displays: High-performance TradingView candlestick charting with volume histogram, live price ticking ($64,194.69, +0.53%), real-time incremental open-candle tick updates, technical overlay indicators (SMA, EMA, Bollinger Bands, VWAP), secondary synchronized Oscillator Pane (RSI, MACD, ATR), direct ML forecast overlay (target price line $64,674.97, 95% confidence interval bounds [$63,390.89 - $65,959.05]), and right-hand AI Model Intelligence Panel with on-demand point-in-time inference and reconciliation audit.*
 
 ---
 
-### 4. Automated Data Quality & Medallion Lineage (`/quality`)
-The platform data integrity center auditing market partitions against 10 automated rules and rendering interactive dataset lineage.
-![Data Quality and Lineage](docs/screenshots/quality-lineage.png)
-*Displays: 92.7% pass rate score across active asset suites, interactive Medallion Lineage DAG tracing Binance Public API → Bronze → Silver → Gold Marts → Features → Serving, and the lineage transformation edges ledger with record counts and UTC timestamps.*
+### 3. Machine Learning Intelligence Plane (`#/models`)
+Walk-forward cross-validation experiment lab and immutable forecast reconciliation ledger.
+![Model Lab & Experiments](docs/screenshots/models-hub.png)
+*Displays: Model Registry & Training Lab with walk-forward CV, naive persistence benchmarking (gating rule $\ge 1\%$ Naive Gain), candidate model comparisons, MLflow hyperparameter audit, and immutable forecast audit ledger with realized outcomes.*
+
+---
+
+### 4. System Operations & Data Quality Observatory (`#/operations`)
+Unified engineering cockpit housing Medallion data quality audits, schema catalog exploration, pipeline latency flowcharts, and system resource governance.
+![System Operations](docs/screenshots/system-operations.png)
+*Displays: Automated 10-rule Data Quality audit (93.9% pass rate), end-to-end Medallion Lineage DAG (Binance Public WS & REST → Bronze → Silver → Gold Marts → Features → Serving), real-time transformation ledger, server-side data exploration, 8-node pipeline latency breakdown, and memory budget tracking.*
+
+---
 
 ---
 

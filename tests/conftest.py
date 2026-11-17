@@ -116,6 +116,12 @@ def isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(settings.storage, "data_dir", str(test_data))
     monkeypatch.setattr(settings.ml, "model_storage_dir", str(test_models))
 
+    from types import SimpleNamespace
+    monkeypatch.setattr(
+        "backend.app.api.v1.system.psutil.disk_usage",
+        lambda _p: SimpleNamespace(free=50 * (1024 ** 3), total=100 * (1024 ** 3), percent=50.0),
+    )
+
     _rebind_runtime_storage(test_data)
     yield test_data
     _rebind_runtime_storage(test_data)
