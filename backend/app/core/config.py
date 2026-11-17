@@ -340,7 +340,7 @@ def _apply_section_fields(target: BaseModel, section: Any, key_map: Optional[Dic
 
 class Settings(BaseSettings):
     """Global system settings."""
-    app_name: str = "Binance Real-Time Financial Intelligence Platform"
+    app_name: str = "MarketStream — Real-Time Financial Data Intelligence Platform"
     app_version: str = "3.0.0"
     app_env: str = Field(default="development", description="development, production, testing")
     profile: PlatformProfile = Field(default=PlatformProfile.LITE)

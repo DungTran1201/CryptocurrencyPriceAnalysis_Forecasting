@@ -83,7 +83,7 @@ if "%STOP_ONLY%"=="1" (
 )
 
 echo ==============================================================================
-echo  Crypto Financial Data Intelligence Platform v3.0.0 - Runtime Launcher
+echo  MarketStream - Real-Time Financial Data Intelligence Platform Launcher
 echo ==============================================================================
 echo  Profile: %PROFILE% ^| Endpoint: http://%HOST%:%PORT%/
 echo.

@@ -19,7 +19,7 @@ goto :parse_args
 
 :args_done
 echo ==============================================================================
-echo  Crypto Financial Data Intelligence Platform v3.0.0 - Environment Setup
+echo  MarketStream - Real-Time Financial Data Intelligence Platform Setup
 echo ==============================================================================
 echo [INFO] Repository root: %REPO_ROOT%
 echo.

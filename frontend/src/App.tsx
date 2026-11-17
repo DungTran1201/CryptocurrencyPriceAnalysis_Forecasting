@@ -199,7 +199,7 @@ export const AppContent: React.FC = () => {
             <TrendingUp size={18} color="#12161C" strokeWidth={2.6} />
           </div>
           <div>
-            <div className="brand-title">CRYPTO PLATFORM</div>
+            <div className="brand-title">MARKETSTREAM</div>
             <div className="brand-tagline">REAL-TIME DATA INTELLIGENCE</div>
           </div>
         </div>
@@ -316,7 +316,7 @@ export const AppContent: React.FC = () => {
         {/* Institutional Footer */}
         <footer className="app-footer">
           <div>
-            Crypto Data Engineering, Analytics & Forecasting Platform • Industrial Data Factory & Financial Terminal
+            MarketStream — Real-Time Financial Data Intelligence Platform • Industrial Data Factory & Financial Terminal
           </div>
           <div style={{ fontFamily: 'var(--font-mono)' }}>
             Medallion Lakehouse • TradingView Engine • Zero-Lookahead Walk-Forward ML

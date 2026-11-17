@@ -1,6 +1,6 @@
-# Cryptocurrency Market Intelligence & Forecasting Configuration
+# MarketStream — Real-Time Financial Data Intelligence Platform Configuration
 app:
-  name: "Binance Real-Time Financial Intelligence Platform"
+  name: "MarketStream — Real-Time Financial Data Intelligence Platform"
   version: "3.0.0"
   env: "development"
   profile: "lite"
