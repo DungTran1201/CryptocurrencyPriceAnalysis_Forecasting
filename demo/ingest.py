@@ -4,12 +4,12 @@ import asyncio
 import json
 
 import aiohttp
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import Enum
 
 from abc import ABC, abstractmethod
-from datetime import datetime
-from typing import Optional, Dict, List
+from datetime import datetime, timezone
+from typing import Optional, Dict, List, Any
 
 from pydantic import BaseModel, Field
 # Unit Definition
@@ -22,8 +22,8 @@ class Interval(str, Enum):
 
 
 # Modeling
-@dataclass(frozen=True)
-class Time:
+# @dataclass(frozen=True)
+class Time(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     time_frame: List[str] = field(default_factory=list)
@@ -111,6 +111,7 @@ class BinanceConnector(MarketDataConnector):
                  base_url: str = "https://api.binance.com"): 
         self.calculator = calculator
         self.base_url = base_url.rstrip("/")
+        self.mapper = BinanceKlineMapper()
 
     def health_check(self) -> bool: 
         pass 
@@ -211,6 +212,154 @@ class BinanceKlineMapper(BaseCandleMapper):
             )
             for k in raw_data
         ]
+
+
+#ByBit Connector
+BYBIT_TIMEFRAME_MAP: Dict[str, str] = {
+    "1m": "1",
+    "3m": "3",
+    "5m": "5",
+    "15m": "15",
+    "30m": "30",
+    "1h": "60",
+    "2h": "120",
+    "4h": "240",
+    "6h": "360",
+    "12h": "720",
+    "1d": "D",
+    "1w": "W",
+    "1M": "M",
+}
+
+class BybitKlineMapper(BaseCandleMapper):
+
+    def map_many(self, raw_data: List[List[Any]]) -> List[Candle]:
+        return [
+            Candle(
+                open_time=int(k[0]),
+                close_time=int(k[0]),  # Bybit kline API không trả về close_time
+                open=float(k[1]),
+                high=float(k[2]),
+                low=float(k[3]),
+                close=float(k[4]),
+                volume=float(k[5]),
+                quote_volume=float(k[6]),  # turnover
+                trades_count=None,         # Bybit kline API không trả về trades_count
+            )
+            for k in reversed(raw_data)
+        ]
+
+class ByBitConnector(MarketDataConnector): 
+    def __init__(
+        self,
+        calculator: BaseIntervalCalculator,
+        mapper: BaseCandleMapper = BybitKlineMapper(),
+        category: str = "spot",
+        base_url: str = "https://api.bybit.com",
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.calculator = calculator
+        self.mapper = mapper
+        self.category = category
+    
+    def health_check(self): 
+        pass
+
+    def _validate(self, token: Token, interval: Interval) -> None:
+        if not isinstance(token, Token):
+            raise TypeError(f"token phải có kiểu Token, nhận được: {type(token).__name__}")
+        if not isinstance(interval, Interval):
+            raise TypeError(f"interval phải có kiểu Interval, nhận được: {type(interval).__name__}")
+        if not isinstance(token.symbol, str) or not token.symbol.strip():
+            raise ValueError("token.symbol phải là chuỗi không rỗng (ví dụ: 'BTCUSDT').")
+
+        time_data = token.time_data
+        if not isinstance(time_data, Time):
+            raise TypeError("token.time_data phải có kiểu Time.")
+
+        start, end = time_data.start_time, time_data.end_time
+        if start is not None and end is not None:
+            if (start.tzinfo is None) != (end.tzinfo is None):
+                raise ValueError("start_time và end_time phải đồng nhất về timezone.")
+            if end < start:
+                raise ValueError("end_time phải lớn hơn hoặc bằng start_time.")
+
+        if not time_data.time_frame:
+            raise ValueError("time_frame không được rỗng.")
+
+        # for tf in time_data.time_frame:
+        #     if tf not in BYBIT_TIMEFRAME_MAP:
+        #         raise ValueError(
+        #             f"time_frame '{tf}' không được Bybit hỗ trợ. "
+        #             f"Các giá trị hợp lệ: {list(BYBIT_TIMEFRAME_MAP.keys())}"
+                # )
+
+    async def fetch_klines(
+        self,
+        token: Token,
+        interval: Interval = Interval.MINUTES,
+    ) -> List[IngestResult]:
+        self._validate(token, interval)
+
+        time_data = token.time_data
+        interval_value: int = self.calculator.calculate(time_data, interval)
+        results: List[IngestResult] = []
+
+        start_ms = int(time_data.start_time.timestamp() * 1000) if time_data.start_time else None
+        end_ms = int(time_data.end_time.timestamp() * 1000) if time_data.end_time else None
+
+        async with aiohttp.ClientSession() as session:
+            for tf in time_data.time_frame:
+                params = {
+                    "category": self.category,
+                    "symbol": token.symbol.upper(),
+                    "interval": BYBIT_TIMEFRAME_MAP[tf],
+                    "start": start_ms,
+                    "end": end_ms,
+                    "limit": min(max(interval_value, 1), 1000),
+                }
+                # Lọc bỏ None để tránh lỗi yarl của aiohttp
+                params = {k: v for k, v in params.items() if v is not None}
+
+                async with session.get(f"{self.base_url}/v5/market/kline", params=params, timeout=10) as resp:
+                    resp.raise_for_status()
+                    payload = await resp.json()
+
+                # Kiểm tra mã lỗi nghiệp vụ của Bybit
+                if payload.get("retCode") != 0:
+                    raise RuntimeError(
+                        f"Bybit API error (code={payload.get('retCode')}): {payload.get('retMsg')}"
+                    )
+
+                raw_klines = payload.get("result", {}).get("list", [])
+                candles = self.mapper.map_many(raw_klines)
+
+                metadata = IngestMetadata(
+                    source=f"bybit_public_{self.category}",
+                    symbol=token.symbol.upper(),
+                    time_frame=tf,
+                    interval_unit=interval.value,
+                    interval_value=interval_value,
+                    count=len(candles),
+                )
+                results.append(IngestResult(metadata=metadata, candles=candles))
+
+        return results
+
+# Job
+class MarketIngestionJob(ABC): 
+    def __init__(self, repository): 
+        self.repository = repository
+
+    @abstractmethod
+    def create_connector(self) -> MarketDataConnector: 
+        pass
+
+    def run(self): 
+        pass
+
+
+
 
 # Processing 
 class StandardIntervalCalculator(BaseIntervalCalculator):
