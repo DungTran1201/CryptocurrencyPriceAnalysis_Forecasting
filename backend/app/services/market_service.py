@@ -1,4 +1,4 @@
-"""Market analytics service: Candles, Technical Indicators, and Aggregation."""
+"""Market analytics service: Candles, Technical Indicators (SMA, EMA, RSI, MACD, BOLL, ATR, VWAP), and Aggregation."""
 
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -8,8 +8,9 @@ from sqlalchemy import select, and_, func
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.market import Symbol, Kline, SyncCheckpoint
+from backend.app.models.market import Symbol, Kline
 from ml.features import compute_sma, compute_ema, compute_rsi, compute_bollinger_bands, compute_macd
+from ml.incremental_analytics import compute_batch_reference_metrics
 
 
 class MarketService:
@@ -17,9 +18,8 @@ class MarketService:
 
     async def get_symbols(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """List all active symbols with their latest sync status and 24h price summary.
-        
-        Uses a batched window query to fetch the last 24 1h candles for all symbols at once,
-        preventing N+1 database queries.
+
+        Uses a single batched window query to avoid N+1 SQL reads.
         """
         stmt = select(Symbol).where(Symbol.is_active == True)
         res = await db.execute(stmt)
@@ -29,10 +29,9 @@ class MarketService:
 
         active_symbols = [s.symbol for s in symbols]
 
-        # Batch load up to 24 most recent 1h candles per symbol using window function
         rn_col = func.row_number().over(
             partition_by=Kline.symbol,
-            order_by=Kline.open_time.desc()
+            order_by=Kline.open_time.desc(),
         ).label("rn")
 
         ranked_subquery = select(
@@ -47,11 +46,11 @@ class MarketService:
             Kline.close,
             Kline.volume,
             Kline.is_closed,
-            rn_col
+            rn_col,
         ).where(
             and_(
                 Kline.symbol.in_(active_symbols),
-                Kline.timeframe == "1h"
+                Kline.timeframe == "1h",
             )
         ).subquery()
 
@@ -86,22 +85,25 @@ class MarketService:
                     "candle_count_24h": 0,
                     "has_full_24h": False,
                     "data_status": "UNAVAILABLE",
-                    "last_synced_at": s.last_synced_at
+                    "last_synced_at": s.last_synced_at,
                 })
             else:
                 current_price = klines[-1].close
                 price_reference = klines[0].open
                 change_24h = ((current_price - price_reference) / price_reference * 100.0) if price_reference > 0 else 0.0
-                high_24h = max([k.high for k in klines])
-                low_24h = min([k.low for k in klines])
-                volume_24h = sum([k.volume for k in klines])
-                has_full_24h = (candle_count >= 24)
+                high_24h = max(k.high for k in klines)
+                low_24h = min(k.low for k in klines)
+                volume_24h = sum(k.volume for k in klines)
 
-                # Determine freshness / status
+                span_seconds = (klines[-1].open_time - klines[0].open_time).total_seconds()
+                has_full_24h = (candle_count >= 24) and (span_seconds >= 22 * 3600)
+
                 is_stale = False
                 if s.last_synced_at:
-                    if (now_utc - s.last_synced_at).total_seconds() > 7200:  # > 2 hours
+                    if (now_utc - s.last_synced_at).total_seconds() > 7200:
                         is_stale = True
+                elif (now_utc - klines[-1].close_time).total_seconds() > 7200 and s.last_synced_at is not None:
+                    is_stale = True
 
                 if is_stale:
                     status = "STALE"
@@ -122,7 +124,7 @@ class MarketService:
                     "candle_count_24h": candle_count,
                     "has_full_24h": has_full_24h,
                     "data_status": status,
-                    "last_synced_at": s.last_synced_at
+                    "last_synced_at": s.last_synced_at or klines[-1].close_time,
                 })
 
         return symbol_list
@@ -139,7 +141,8 @@ class MarketService:
         ema_periods: Optional[List[int]] = None,
         include_bollinger: bool = True,
         include_rsi: bool = True,
-        include_macd: bool = True
+        include_macd: bool = True,
+        include_atr_vwap: bool = True,
     ) -> Dict[str, Any]:
         """Fetch historical candles and attach requested technical indicators."""
         symbol = symbol.upper()
@@ -149,7 +152,7 @@ class MarketService:
         query = select(Kline).where(
             and_(
                 Kline.symbol == symbol,
-                Kline.timeframe == timeframe
+                Kline.timeframe == timeframe,
             )
         )
         if start_time:
@@ -167,7 +170,7 @@ class MarketService:
                 "timeframe": timeframe,
                 "count": 0,
                 "candles": [],
-                "indicators": {}
+                "indicators": {},
             }
 
         df = pd.DataFrame([
@@ -179,7 +182,7 @@ class MarketService:
                 "close": k.close,
                 "volume": k.volume,
                 "close_time": k.close_time.isoformat(),
-                "is_closed": k.is_closed
+                "is_closed": k.is_closed,
             }
             for k in klines
         ])
@@ -188,59 +191,67 @@ class MarketService:
 
         indicators: Dict[str, Any] = {}
 
-        # 1. SMAs
         for p in sma_periods:
             if n_candles >= p:
                 sma_vals = compute_sma(close_series, p)
-                indicators[f"SMA_{p}"] = [None if np.isnan(v) else round(v, 2) for v in sma_vals]
+                indicators[f"SMA_{p}"] = [None if np.isnan(v) else round(float(v), 2) for v in sma_vals]
             else:
                 indicators[f"SMA_{p}"] = [None] * n_candles
 
-        # 2. EMAs
         for p in ema_periods:
             if n_candles >= p:
                 ema_vals = compute_ema(close_series, p)
-                indicators[f"EMA_{p}"] = [None if np.isnan(v) else round(v, 2) for v in ema_vals]
+                indicators[f"EMA_{p}"] = [None if np.isnan(v) else round(float(v), 2) for v in ema_vals]
             else:
                 indicators[f"EMA_{p}"] = [None] * n_candles
 
-        # 3. Bollinger Bands
         if include_bollinger:
             if n_candles >= 20:
-                mid, up, low, pct_b = compute_bollinger_bands(close_series, window=20, num_std=2.0)
-                indicators["BOLL_MID"] = [None if np.isnan(v) else round(v, 2) for v in mid]
-                indicators["BOLL_UPPER"] = [None if np.isnan(v) else round(v, 2) for v in up]
-                indicators["BOLL_LOWER"] = [None if np.isnan(v) else round(v, 2) for v in low]
+                mid, up, low, _ = compute_bollinger_bands(close_series, window=20, num_std=2.0)
+                indicators["BOLL_MID"] = [None if np.isnan(v) else round(float(v), 2) for v in mid]
+                indicators["BOLL_UPPER"] = [None if np.isnan(v) else round(float(v), 2) for v in up]
+                indicators["BOLL_LOWER"] = [None if np.isnan(v) else round(float(v), 2) for v in low]
             else:
                 indicators["BOLL_MID"] = [None] * n_candles
                 indicators["BOLL_UPPER"] = [None] * n_candles
                 indicators["BOLL_LOWER"] = [None] * n_candles
 
-        # 4. RSI
         if include_rsi:
             if n_candles >= 14:
                 rsi_vals = compute_rsi(close_series, window=14)
-                indicators["RSI_14"] = [None if np.isnan(v) else round(v, 2) for v in rsi_vals]
+                indicators["RSI_14"] = [None if np.isnan(v) else round(float(v), 2) for v in rsi_vals]
             else:
                 indicators["RSI_14"] = [None] * n_candles
 
-        # 5. MACD
         if include_macd:
             if n_candles >= 26:
                 m_line, s_line, h_line = compute_macd(close_series)
-                indicators["MACD_LINE"] = [None if np.isnan(v) else round(v, 2) for v in m_line]
-                indicators["MACD_SIGNAL"] = [None if np.isnan(v) else round(v, 2) for v in s_line]
-                indicators["MACD_HIST"] = [None if np.isnan(v) else round(v, 2) for v in h_line]
+                indicators["MACD_LINE"] = [None if np.isnan(v) else round(float(v), 2) for v in m_line]
+                indicators["MACD_SIGNAL"] = [None if np.isnan(v) else round(float(v), 2) for v in s_line]
+                indicators["MACD_HIST"] = [None if np.isnan(v) else round(float(v), 2) for v in h_line]
             else:
                 indicators["MACD_LINE"] = [None] * n_candles
                 indicators["MACD_SIGNAL"] = [None] * n_candles
                 indicators["MACD_HIST"] = [None] * n_candles
+
+        if include_atr_vwap:
+            ref = compute_batch_reference_metrics(df, timeframe=timeframe)
+            series = ref.get("series", {})
+            atr_s = series.get("atr_14")
+            vwap_s = series.get("vwap")
+            indicators["ATR_14"] = (
+                [None if pd.isna(v) else round(float(v), 4) for v in atr_s]
+                if atr_s is not None else [None] * n_candles
+            )
+            indicators["VWAP"] = (
+                [None if pd.isna(v) else round(float(v), 4) for v in vwap_s]
+                if vwap_s is not None else [None] * n_candles
+            )
 
         return {
             "symbol": symbol,
             "timeframe": timeframe,
             "count": len(df),
             "candles": df.to_dict(orient="records"),
-            "indicators": indicators
+            "indicators": indicators,
         }
-

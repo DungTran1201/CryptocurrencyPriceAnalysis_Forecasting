@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.core.logging import get_logger
+from backend.app.core.security import require_admin_if_configured, validate_symbol, validate_timeframe
 from backend.app.schemas.market import (
     SymbolInfoSchema,
     MarketDataResponseSchema,
@@ -68,18 +69,12 @@ async def get_klines_with_indicators(
 @router.post("/sync", response_model=SyncResponseSchema)
 async def trigger_sync(
     payload: SyncRequestSchema,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_admin_if_configured),
 ):
     """Trigger manual or incremental synchronization from Binance API."""
-    normalized_symbol = payload.symbol.strip().upper()
-    if not normalized_symbol or len(normalized_symbol) > 20 or not normalized_symbol.isalnum():
-        raise HTTPException(status_code=400, detail=f"Invalid symbol format '{payload.symbol}'")
-
-    if payload.timeframe not in VALID_TIMEFRAMES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported timeframe '{payload.timeframe}'. Valid options: {', '.join(sorted(VALID_TIMEFRAMES))}"
-        )
+    normalized_symbol = validate_symbol(payload.symbol)
+    validate_timeframe(payload.timeframe, VALID_TIMEFRAMES)
 
     try:
         result = await sync_service.sync_incremental(

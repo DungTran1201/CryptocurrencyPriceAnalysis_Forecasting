@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles, TrendingUp, TrendingDown, ShieldCheck, Zap, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
-import { ForecastRecord } from '../types';
+import { ForecastRecord, SymbolInfo } from '../types';
 import {
   formatCurrency,
   formatPercent,
@@ -9,12 +9,17 @@ import {
 } from '../utils/formatters';
 
 export const PredictionStudio: React.FC = () => {
+  const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
   const [symbol, setSymbol] = useState<string>('BTCUSDT');
   const [timeframe, setTimeframe] = useState<string>('1h');
   const [horizon, setHorizon] = useState<number>(6);
   const [generating, setGenerating] = useState<boolean>(false);
   const [forecast, setForecast] = useState<ForecastRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getSymbols().then(setSymbols).catch(() => {});
+  }, []);
 
   const handleGenerate = async () => {
     try {
@@ -55,10 +60,16 @@ export const PredictionStudio: React.FC = () => {
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
             >
-              <option value="BTCUSDT">BTC / USDT</option>
-              <option value="ETHUSDT">ETH / USDT</option>
-              <option value="SOLUSDT">SOL / USDT</option>
-              <option value="BNBUSDT">BNB / USDT</option>
+              {(symbols.length > 0 ? symbols : [
+                { symbol: 'BTCUSDT', base_asset: 'BTC', quote_asset: 'USDT' },
+                { symbol: 'ETHUSDT', base_asset: 'ETH', quote_asset: 'USDT' },
+                { symbol: 'SOLUSDT', base_asset: 'SOL', quote_asset: 'USDT' },
+                { symbol: 'BNBUSDT', base_asset: 'BNB', quote_asset: 'USDT' }
+              ]).map((s) => (
+                <option key={s.symbol} value={s.symbol}>
+                  {s.base_asset} / {s.quote_asset}
+                </option>
+              ))}
             </select>
           </div>
 

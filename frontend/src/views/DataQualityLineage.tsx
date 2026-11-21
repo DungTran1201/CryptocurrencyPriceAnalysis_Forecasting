@@ -124,6 +124,7 @@ export const DataQualityLineage: React.FC = () => {
             value={auditTimeframe}
             onChange={(e) => setAuditTimeframe(e.target.value)}
           >
+            <option value="1m">1m</option>
             <option value="15m">15m</option>
             <option value="1h">1h</option>
             <option value="4h">4h</option>
@@ -256,6 +257,35 @@ export const DataQualityLineage: React.FC = () => {
             </div>
           ))}
         </div>
+
+        {lineage?.recorded_runs && lineage.recorded_runs.length > 0 && (
+          <div className="table-responsive" style={{ marginTop: '1.25rem' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Source Dataset</th>
+                  <th>Target Dataset</th>
+                  <th>Transformation</th>
+                  <th>Records In → Out</th>
+                  <th>Status</th>
+                  <th>Recorded (UTC)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineage.recorded_runs.slice(0, 8).map((edge) => (
+                  <tr key={edge.id}>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{edge.source_dataset}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--accent-cyan)' }}>{edge.target_dataset}</td>
+                    <td style={{ fontSize: '0.78rem' }}>{edge.transformation}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{edge.records_in} → {edge.records_out}</td>
+                    <td><span className="badge badge-success">{edge.status}</span></td>
+                    <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{formatRelativeTime(edge.recorded_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Rule Results & Evaluation Audit Breakdown */}

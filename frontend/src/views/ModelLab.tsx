@@ -9,14 +9,16 @@ import {
   Layers
 } from 'lucide-react';
 import { api } from '../services/api';
-import { ModelCard, MLflowTrackingStatus, ExperimentRunItem } from '../types';
+import { ModelCard, MLflowTrackingStatus, ExperimentRunItem, SymbolInfo } from '../types';
 import { formatNumber, formatPercent } from '../utils/formatters';
 
 export const ModelLab: React.FC = () => {
   const [models, setModels] = useState<ModelCard[]>([]);
+  const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
   const [experiments, setExperiments] = useState<ExperimentRunItem[]>([]);
   const [trackingStatus, setTrackingStatus] = useState<MLflowTrackingStatus | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Training form state
   const [trainSymbol, setTrainSymbol] = useState<string>('BTCUSDT');
@@ -31,16 +33,19 @@ export const ModelLab: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [modelsRes, statusRes, expRes] = await Promise.all([
+      setLoadError(null);
+      const [modelsRes, statusRes, expRes, symRes] = await Promise.all([
         api.getModels(),
         api.getTrackingStatus(),
-        api.getExperiments()
+        api.getExperiments(),
+        api.getSymbols().catch(() => [])
       ]);
       setModels(modelsRes);
       setTrackingStatus(statusRes);
       setExperiments(expRes);
+      if (symRes.length > 0) setSymbols(symRes);
     } catch (err: any) {
-      console.error('Failed to load models/tracking data:', err);
+      setLoadError(err?.message || 'Failed to load model registry.');
     } finally {
       setLoading(false);
     }
@@ -87,6 +92,16 @@ export const ModelLab: React.FC = () => {
         </button>
       </div>
 
+      {loadError && (
+        <div className="alert-banner error" style={{ marginBottom: '1rem', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertCircle size={16} />
+            <span>{loadError}</span>
+          </div>
+          <button className="btn btn-secondary btn-sm" onClick={loadData}>Retry</button>
+        </div>
+      )}
+
       {/* MLflow Tracking Connection Card */}
       {trackingStatus && (
         <div className="panel" style={{ marginBottom: '1.25rem', borderLeft: '4px solid var(--accent-cyan)' }}>
@@ -130,10 +145,9 @@ export const ModelLab: React.FC = () => {
           <div className="form-group">
             <label className="form-label" htmlFor="train-symbol">Asset</label>
             <select id="train-symbol" className="form-control" value={trainSymbol} onChange={(e) => setTrainSymbol(e.target.value)}>
-              <option value="BTCUSDT">BTCUSDT</option>
-              <option value="ETHUSDT">ETHUSDT</option>
-              <option value="SOLUSDT">SOLUSDT</option>
-              <option value="BNBUSDT">BNBUSDT</option>
+              {(symbols.length > 0 ? symbols.map((s) => s.symbol) : ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT']).map((sym) => (
+                <option key={sym} value={sym}>{sym}</option>
+              ))}
             </select>
           </div>
 

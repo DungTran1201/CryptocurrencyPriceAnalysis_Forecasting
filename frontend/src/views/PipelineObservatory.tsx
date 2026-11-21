@@ -10,12 +10,17 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api';
-import { PipelineRunItem, PipelineRunDetail, SymbolInfo } from '../types';
+import { PipelineRunItem, PipelineRunDetail, SymbolInfo, StreamingStatusResponse } from '../types';
 import { formatRelativeTime } from '../utils/formatters';
+import { RealtimePipelineFlow } from '../components/RealtimePipelineFlow';
+import { useMarketStream } from '../hooks/useMarketStream';
 
 export const PipelineObservatory: React.FC = () => {
   const [runs, setRuns] = useState<PipelineRunItem[]>([]);
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
+  const [streamingMeta, setStreamingMeta] = useState<StreamingStatusResponse | null>(null);
+  const { wsState, streamStatus } = useMarketStream(true);
+  const livePipelineFlow = streamStatus?.pipeline_flow || streamingMeta?.pipeline_flow || null;
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,6 +33,7 @@ export const PipelineObservatory: React.FC = () => {
   const [triggerSymbol, setTriggerSymbol] = useState<string>('BTCUSDT');
   const [triggerTimeframe, setTriggerTimeframe] = useState<string>('1h');
   const [triggerLookback, setTriggerLookback] = useState<number>(30);
+  const [skipNetworkIngest, setSkipNetworkIngest] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [triggerSuccess, setTriggerSuccess] = useState<string | null>(null);
 
@@ -38,12 +44,14 @@ export const PipelineObservatory: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const [runsRes, symsRes] = await Promise.all([
+      const [runsRes, symsRes, streamStat] = await Promise.all([
         api.getPipelineRuns(filterSymbol || undefined, filterStatus || undefined, 50),
-        api.getSymbols()
+        api.getSymbols(),
+        api.getStreamingStatus().catch(() => null)
       ]);
       setRuns(runsRes);
       setSymbols(symsRes);
+      if (streamStat) setStreamingMeta(streamStat);
     } catch (err: any) {
       setError(err?.message || 'Failed to load pipeline runs.');
     } finally {
@@ -71,7 +79,13 @@ export const PipelineObservatory: React.FC = () => {
     try {
       setIsSubmitting(true);
       setTriggerSuccess(null);
-      const res: any = await api.triggerPipeline(triggerSymbol, triggerTimeframe, triggerLookback, true);
+      const res: any = await api.triggerPipeline(
+        triggerSymbol,
+        triggerTimeframe,
+        triggerLookback,
+        true,
+        skipNetworkIngest
+      );
       setTriggerSuccess(`Pipeline executed successfully! Added ${res.rows_inserted || 0} rows in ${res.duration_seconds?.toFixed(2) || '0.00'}s.`);
       await loadData();
       setTimeout(() => {
@@ -117,6 +131,13 @@ export const PipelineObservatory: React.FC = () => {
           <span>{error}</span>
         </div>
       )}
+
+      {/* Real-Time Streaming Pipeline Visualizer & Latency Breakdown */}
+      <RealtimePipelineFlow
+        flow={livePipelineFlow}
+        wsConnected={wsState === 'CONNECTED'}
+        onAfterFlush={loadData}
+      />
 
       {/* Filter Toolbar */}
       <div className="filter-toolbar">
@@ -415,6 +436,17 @@ export const PipelineObservatory: React.FC = () => {
                     value={triggerLookback}
                     onChange={(e) => setTriggerLookback(parseInt(e.target.value) || 30)}
                   />
+                </div>
+
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.84rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={skipNetworkIngest}
+                      onChange={(e) => setSkipNetworkIngest(e.target.checked)}
+                    />
+                    <span>Historical Recomputation Only (Silver → Gold/Features without REST sync)</span>
+                  </label>
                 </div>
               </div>
 

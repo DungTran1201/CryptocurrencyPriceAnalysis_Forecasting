@@ -10,11 +10,12 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { api } from '../services/api';
-import { DatasetMetadata, DatasetPreviewResponse, SymbolInfo } from '../types';
+import { DataCatalogItem, DatasetMetadata, DatasetPreviewResponse, SymbolInfo } from '../types';
 import { formatNumber, formatCurrency } from '../utils/formatters';
 
 export const DataExplorer: React.FC = () => {
   const [datasets, setDatasets] = useState<DatasetMetadata[]>([]);
+  const [catalogItems, setCatalogItems] = useState<DataCatalogItem[]>([]);
   const [selectedDataset, setSelectedDataset] = useState<string>('silver_klines');
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
 
@@ -26,22 +27,30 @@ export const DataExplorer: React.FC = () => {
 
   // Data Preview
   const [previewData, setPreviewData] = useState<DatasetPreviewResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<'table' | 'schema'>('table');
+  const [activeTab, setActiveTab] = useState<'table' | 'schema' | 'catalog'>('table');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadDatasets = async () => {
     try {
-      const [dsList, syms] = await Promise.all([
+      const [dsList, syms, catList] = await Promise.all([
         api.getDatasets(),
-        api.getSymbols()
+        api.getSymbols(),
+        api.getCatalog().catch(() => [])
       ]);
       setDatasets(dsList);
       setSymbols(syms);
+      setCatalogItems(catList);
     } catch (err: any) {
       setError(err?.message || 'Failed to load dataset catalog.');
     }
   };
+
+  const usesSymbolFilter =
+    selectedDataset === 'silver_klines' ||
+    selectedDataset === 'bronze_market_events' ||
+    selectedDataset === 'gold_analytics_marts' ||
+    selectedDataset === 'gold_feature_sets';
 
   const loadPreview = async () => {
     try {
@@ -51,8 +60,10 @@ export const DataExplorer: React.FC = () => {
         selectedDataset,
         page,
         pageSize,
-        selectedDataset === 'silver_klines' ? filterSymbol : undefined,
-        selectedDataset === 'silver_klines' ? filterTimeframe : undefined
+        usesSymbolFilter ? filterSymbol : undefined,
+        selectedDataset === 'silver_klines' || selectedDataset === 'gold_analytics_marts' || selectedDataset === 'gold_feature_sets'
+          ? filterTimeframe
+          : undefined
       );
       setPreviewData(res);
     } catch (err: any) {
@@ -131,7 +142,7 @@ export const DataExplorer: React.FC = () => {
             ))}
           </select>
 
-          {selectedDataset === 'silver_klines' && (
+          {usesSymbolFilter && (
             <>
               <select
                 className="filter-select"
@@ -156,6 +167,7 @@ export const DataExplorer: React.FC = () => {
                   setPage(1);
                 }}
               >
+                <option value="1m">1m</option>
                 <option value="15m">15m</option>
                 <option value="1h">1h</option>
                 <option value="4h">4h</option>
@@ -178,7 +190,7 @@ export const DataExplorer: React.FC = () => {
           </select>
         </div>
 
-        {/* View Switcher: Table vs Schema */}
+        {/* View Switcher: Table vs Schema vs Catalog */}
         <div className="tab-pill-group">
           <button
             className={`tab-pill ${activeTab === 'table' ? 'active' : ''}`}
@@ -193,6 +205,13 @@ export const DataExplorer: React.FC = () => {
           >
             <BookOpen size={13} />
             <span>Schema Dictionary</span>
+          </button>
+          <button
+            className={`tab-pill ${activeTab === 'catalog' ? 'active' : ''}`}
+            onClick={() => setActiveTab('catalog')}
+          >
+            <Database size={13} />
+            <span>Data Catalog ({catalogItems.length})</span>
           </button>
         </div>
       </div>
@@ -227,9 +246,52 @@ export const DataExplorer: React.FC = () => {
         </div>
       )}
 
-      {/* Main Content Area: Table View or Schema Dictionary */}
+      {/* Main Content Area: Catalog, Schema Dictionary, or Table View */}
       <div className="panel" style={{ marginTop: '1.25rem' }}>
-        {activeTab === 'schema' ? (
+        {activeTab === 'catalog' ? (
+          <div>
+            <div className="panel-header">
+              <div className="panel-title">
+                <Database size={18} color="var(--accent-cyan)" />
+                <span>Persistent Medallion Data Catalog</span>
+              </div>
+              <span className="badge badge-neutral">Queryable Metadata</span>
+            </div>
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Dataset</th>
+                    <th>Layer</th>
+                    <th>Format</th>
+                    <th>Rows</th>
+                    <th>Size (KB)</th>
+                    <th>Location</th>
+                    <th>Retention Policy</th>
+                    <th>Ver</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {catalogItems.map((c) => (
+                    <tr key={c.dataset_id}>
+                      <td>
+                        <div style={{ fontWeight: 600, color: '#fff' }}>{c.dataset_name}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{c.dataset_id}</div>
+                      </td>
+                      <td><span className="badge badge-neutral">{c.layer}</span></td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{c.data_type}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>{formatNumber(c.row_count, 0)}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>{(c.size_bytes / 1024).toFixed(1)}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', color: 'var(--text-muted)' }}>{c.storage_location}</td>
+                      <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{c.retention_policy}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>v{c.version}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : activeTab === 'schema' ? (
           <div>
             <div className="panel-header">
               <div className="panel-title">

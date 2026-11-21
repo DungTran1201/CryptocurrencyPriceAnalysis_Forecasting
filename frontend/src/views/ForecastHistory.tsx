@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { History, CheckCircle2, XCircle, Clock, CheckCheck, Filter, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
-import { ForecastHistoryResponse } from '../types';
+import { ForecastHistoryResponse, SymbolInfo } from '../types';
 import {
   formatCurrency,
   formatPercent,
@@ -11,7 +11,9 @@ import {
 
 export const ForecastHistory: React.FC = () => {
   const [data, setData] = useState<ForecastHistoryResponse | null>(null);
+  const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [symbolFilter, setSymbolFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [reconciling, setReconciling] = useState<boolean>(false);
@@ -20,15 +22,15 @@ export const ForecastHistory: React.FC = () => {
   const loadHistory = async () => {
     try {
       setLoading(true);
-      const res = await api.getForecasts(
-        symbolFilter || undefined,
-        statusFilter || undefined,
-        1,
-        100
-      );
+      setLoadError(null);
+      const [res, syms] = await Promise.all([
+        api.getForecasts(symbolFilter || undefined, statusFilter || undefined, 1, 100),
+        api.getSymbols().catch(() => [])
+      ]);
       setData(res);
+      if (syms.length > 0) setSymbols(syms);
     } catch (err: any) {
-      console.error('Failed to load forecast history:', err);
+      setLoadError(err?.message || 'Failed to load forecast audit ledger.');
     } finally {
       setLoading(false);
     }
@@ -82,6 +84,16 @@ export const ForecastHistory: React.FC = () => {
           <span>{reconciling ? 'Checking Realizations...' : 'Reconcile Mature Forecasts'}</span>
         </button>
       </div>
+
+      {loadError && (
+        <div className="alert-banner error" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertCircle size={16} />
+            <span>{loadError}</span>
+          </div>
+          <button className="btn btn-secondary btn-sm" onClick={loadHistory}>Retry</button>
+        </div>
+      )}
 
       {reconcileResult && (
         <div style={{
@@ -151,10 +163,9 @@ export const ForecastHistory: React.FC = () => {
           aria-label="Filter by asset symbol"
         >
           <option value="">All Symbols</option>
-          <option value="BTCUSDT">BTCUSDT</option>
-          <option value="ETHUSDT">ETHUSDT</option>
-          <option value="SOLUSDT">SOLUSDT</option>
-          <option value="BNBUSDT">BNBUSDT</option>
+          {(symbols.length > 0 ? symbols.map((s) => s.symbol) : ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT']).map((sym) => (
+            <option key={sym} value={sym}>{sym}</option>
+          ))}
         </select>
 
         <select

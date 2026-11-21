@@ -21,26 +21,31 @@ class PipelineRun(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     pipeline_name = Column(String(64), nullable=False, index=True)
+    workflow_version = Column(String(24), default="3.0.0", nullable=False)
     symbol = Column(String(32), nullable=False, index=True)
     timeframe = Column(String(16), nullable=False, index=True)
-    
+
     status = Column(String(24), default="PENDING", nullable=False, index=True)  # PENDING, RUNNING, SUCCESS, FAILED, CANCELLED
     trigger_type = Column(String(24), default="MANUAL", nullable=False)          # MANUAL, SCHEDULED, RETRY, BACKFILL
-    
+    retry_count = Column(Integer, default=0, nullable=False)
+    max_retries = Column(Integer, default=2, nullable=False)
+
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     duration_seconds = Column(Float, nullable=True)
-    
+
     # Throughput and data statistics
     rows_read = Column(Integer, default=0, nullable=False)
     rows_inserted = Column(Integer, default=0, nullable=False)
     rows_updated = Column(Integer, default=0, nullable=False)
     rows_rejected = Column(Integer, default=0, nullable=False)
     gaps_detected = Column(Integer, default=0, nullable=False)
-    
+
     start_watermark = Column(DateTime, nullable=True)
     end_watermark = Column(DateTime, nullable=True)
-    
+    input_datasets = Column(Text, nullable=True)
+    output_datasets = Column(Text, nullable=True)
+
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False, index=True)
 
@@ -51,15 +56,19 @@ class PipelineTaskRun(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     pipeline_run_id = Column(String(36), ForeignKey("pipeline_runs.id", ondelete="CASCADE"), nullable=False, index=True)
-    task_name = Column(String(64), nullable=False)  # e.g., ingest_bronze, validate_silver, build_gold_marts, extract_features
+    task_name = Column(String(64), nullable=False)
     sequence_order = Column(Integer, default=1, nullable=False)
-    
-    status = Column(String(24), default="PENDING", nullable=False)  # PENDING, RUNNING, SUCCESS, FAILED, SKIPPED
+    depends_on = Column(String(128), nullable=True)
+
+    status = Column(String(24), default="PENDING", nullable=False)
+    retry_count = Column(Integer, default=0, nullable=False)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     duration_seconds = Column(Float, nullable=True)
-    
+
     records_processed = Column(Integer, default=0, nullable=False)
+    input_dataset = Column(String(64), nullable=True)
+    output_dataset = Column(String(64), nullable=True)
     error_message = Column(Text, nullable=True)
     logs = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)

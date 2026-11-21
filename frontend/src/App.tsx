@@ -1,47 +1,50 @@
 import React, { useState, useEffect } from 'react';
 import {
   TrendingUp,
-  LineChart,
-  Sparkles,
-  History,
+  Box,
+  BarChart2,
   Cpu,
-  Activity,
+  Settings,
   Menu,
   X,
-  Layers,
-  ShieldCheck,
-  Database,
-  Server,
-  RefreshCw,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  RefreshCw,
+  Radio
 } from 'lucide-react';
-import { DataOpsOverview } from './views/DataOpsOverview';
-import { PipelineObservatory } from './views/PipelineObservatory';
-import { DataQualityLineage } from './views/DataQualityLineage';
-import { DataExplorer } from './views/DataExplorer';
-import { MarketAnalytics } from './views/MarketAnalytics';
-import { PredictionStudio } from './views/PredictionStudio';
-import { ForecastHistory } from './views/ForecastHistory';
-import { ModelLab } from './views/ModelLab';
-import { SystemStatusView } from './views/SystemStatusView';
+import { MarketStreamProvider } from './context/MarketStreamContext';
+import { DataFactoryView } from './views/DataFactoryView';
+import { MarketTerminalView } from './views/MarketTerminalView';
+import { ModelsHubView } from './views/ModelsHubView';
+import { SystemOperationsView, OperationsTab } from './views/SystemOperationsView';
 import { api } from './services/api';
 import { SystemStatus } from './types';
 import { StatusBadge } from './components/StatusBadge';
 
-export type TabType =
-  | 'overview'
-  | 'pipelines'
-  | 'quality'
-  | 'explorer'
-  | 'analytics'
-  | 'studio'
-  | 'history'
-  | 'models'
-  | 'system';
+export type PrimaryTabType = 'factory' | 'terminal' | 'models' | 'operations';
 
-export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+interface RouteState {
+  primary: PrimaryTabType;
+  operationsTab?: OperationsTab;
+}
+
+const parseHash = (): RouteState => {
+  if (typeof window === 'undefined') return { primary: 'factory' };
+  const raw = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+
+  // Backward compatibility mappings
+  if (raw === 'overview' || raw === 'factory' || !raw) return { primary: 'factory' };
+  if (raw === 'live' || raw === 'terminal' || raw === 'analytics') return { primary: 'terminal' };
+  if (raw === 'models' || raw === 'studio' || raw === 'history') return { primary: 'models' };
+  if (raw === 'quality' || raw === 'explorer' || raw === 'pipelines' || raw === 'system' || raw === 'operations') {
+    const opTab = (['quality', 'explorer', 'pipelines', 'system'].includes(raw) ? raw : 'quality') as OperationsTab;
+    return { primary: 'operations', operationsTab: opTab };
+  }
+  return { primary: 'factory' };
+};
+
+export const AppContent: React.FC = () => {
+  const [route, setRoute] = useState<RouteState>(parseHash);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [syncingQuick, setSyncingQuick] = useState<boolean>(false);
   const [systemState, setSystemState] = useState<{
@@ -102,7 +105,14 @@ export const App: React.FC = () => {
   useEffect(() => {
     checkStatus();
     const interval = setInterval(checkStatus, 30000);
-    return () => clearInterval(interval);
+    const onHashChange = () => {
+      setRoute(parseHash());
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('hashchange', onHashChange);
+    };
   }, []);
 
   const handleQuickSync = async () => {
@@ -117,91 +127,129 @@ export const App: React.FC = () => {
     }
   };
 
-  const navGroups: {
-    groupTitle: string;
-    items: { id: TabType; label: string; icon: React.ReactNode; badge?: string }[];
-  }[] = [
+  const handleNavigate = (tab: PrimaryTabType, opTab?: OperationsTab) => {
+    if (tab === 'operations' && opTab) {
+      window.location.hash = opTab;
+    } else {
+      window.location.hash = tab;
+    }
+    setRoute({ primary: tab, operationsTab: opTab });
+    setMobileMenuOpen(false);
+  };
+
+  const navItems = [
     {
-      groupTitle: 'Core Operations',
+      groupTitle: 'Core Workspaces',
       items: [
-        { id: 'overview', label: 'Data Operations', icon: <Layers size={16} /> },
-        { id: 'pipelines', label: 'Pipelines', icon: <Activity size={16} /> },
-        { id: 'quality', label: 'Quality & Lineage', icon: <ShieldCheck size={16} /> },
-        { id: 'explorer', label: 'Data Explorer', icon: <Database size={16} /> }
+        {
+          id: 'factory' as PrimaryTabType,
+          label: 'Data Factory',
+          subtitle: '3D Real-Time Platform',
+          icon: <Box size={18} />
+        },
+        {
+          id: 'terminal' as PrimaryTabType,
+          label: 'Market Terminal',
+          subtitle: 'TradingView & ML Overlay',
+          icon: <BarChart2 size={18} />
+        },
+        {
+          id: 'models' as PrimaryTabType,
+          label: 'Models & Inference',
+          subtitle: 'Training Lab & Ledger',
+          icon: <Cpu size={18} />
+        }
       ]
     },
     {
-      groupTitle: 'Quantitative Lab',
+      groupTitle: 'Operations & Governance',
       items: [
-        { id: 'analytics', label: 'Market Analytics', icon: <LineChart size={16} /> },
-        { id: 'studio', label: 'Prediction Studio', icon: <Sparkles size={16} /> },
-        { id: 'history', label: 'Forecast History', icon: <History size={16} /> },
-        { id: 'models', label: 'Model Lab', icon: <Cpu size={16} /> }
-      ]
-    },
-    {
-      groupTitle: 'Infrastructure',
-      items: [
-        { id: 'system', label: 'System Health', icon: <Server size={16} /> }
+        {
+          id: 'operations' as PrimaryTabType,
+          label: 'System & Operations',
+          subtitle: 'DQ, Explorer, Pipelines, Health',
+          icon: <Settings size={18} />
+        }
       ]
     }
   ];
 
-  const handleTabSelect = (tab: TabType) => {
-    setActiveTab(tab);
-    setMobileMenuOpen(false);
-  };
-
-  // Find active label for breadcrumb
-  let activeLabel = 'Data Operations';
-  for (const g of navGroups) {
-    const found = g.items.find((i) => i.id === activeTab);
-    if (found) {
-      activeLabel = found.label;
-      break;
+  const getBreadcrumbLabel = () => {
+    switch (route.primary) {
+      case 'factory':
+        return 'Data Factory (3D Real-Time Platform)';
+      case 'terminal':
+        return 'Market Terminal (TradingView & ML Inference)';
+      case 'models':
+        return 'Models & Experiments (Walk-Forward Lab)';
+      case 'operations':
+        return `System & Operations (${route.operationsTab || 'Quality & Lineage'})`;
+      default:
+        return 'Platform';
     }
-  }
+  };
 
   return (
     <div className="app-layout">
       {/* 1. Left Persistent Sidebar */}
       <aside className={`app-sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`} role="navigation" aria-label="Main Navigation">
         {/* Brand Header */}
-        <div className="sidebar-brand" onClick={() => handleTabSelect('overview')} role="button" tabIndex={0}>
+        <div className="sidebar-brand" onClick={() => handleNavigate('factory')} role="button" tabIndex={0}>
           <div className="brand-icon">
             <TrendingUp size={18} color="#12161C" strokeWidth={2.6} />
           </div>
           <div>
-            <div className="brand-title">CRYPTO PLATFORM</div>
-            <div className="brand-tagline">DATA ENG • ANALYTICS • ML</div>
+            <div className="brand-title">MARKETSTREAM</div>
+            <div className="brand-tagline">REAL-TIME DATA INTELLIGENCE</div>
           </div>
         </div>
 
         {/* Navigation Categories */}
         <nav className="sidebar-nav">
-          {navGroups.map((group) => (
+          {navItems.map((group) => (
             <div key={group.groupTitle} className="nav-group">
               <div className="nav-group-label">{group.groupTitle}</div>
-              {group.items.map((item) => (
-                <button
-                  key={item.id}
-                  id={`nav-item-${item.id}`}
-                  className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
-                  onClick={() => handleTabSelect(item.id)}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </button>
-              ))}
+              {group.items.map((item) => {
+                const isActive = route.primary === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    id={`nav-item-${item.id}`}
+                    className={`nav-item ${isActive ? 'active' : ''}`}
+                    onClick={() => handleNavigate(item.id)}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      padding: '10px 14px',
+                      gap: '2px',
+                      marginBottom: '4px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+                      <span style={{ color: isActive ? '#00D8FF' : '#848E9C' }}>{item.icon}</span>
+                      <span style={{ fontWeight: isActive ? 700 : 500, color: isActive ? '#EAECEF' : '#CBD5E1', fontSize: '13px' }}>
+                        {item.label}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '10px', color: '#848E9C', paddingLeft: '28px' }}>
+                      {item.subtitle}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ))}
         </nav>
 
         {/* Sidebar Footer */}
         <div className="sidebar-footer">
-          <div style={{ marginBottom: '0.35rem' }}>Binance Intelligence v2.0</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', fontSize: '11px', color: '#0ECB81' }}>
+            <Radio size={12} className="pulse" />
+            <span>Single WebSocket Hub</span>
+          </div>
           <div className="engine-spec-pill">
-            <span>FASTAPI • PYTHON 3.12</span>
+            <span>NATS • DUCKDB • FASTAPI</span>
           </div>
         </div>
       </aside>
@@ -220,7 +268,7 @@ export const App: React.FC = () => {
             </button>
             <span>Platform</span>
             <ChevronRight size={14} />
-            <span className="active">{activeLabel}</span>
+            <span className="active">{getBreadcrumbLabel()}</span>
           </div>
 
           <div className="topbar-actions">
@@ -258,29 +306,32 @@ export const App: React.FC = () => {
         </header>
 
         {/* Main Viewport */}
-        <main className="main-viewport" role="main">
-          {activeTab === 'overview' && <DataOpsOverview onNavigateTab={(tab) => handleTabSelect(tab as TabType)} />}
-          {activeTab === 'pipelines' && <PipelineObservatory />}
-          {activeTab === 'quality' && <DataQualityLineage />}
-          {activeTab === 'explorer' && <DataExplorer />}
-          {activeTab === 'analytics' && <MarketAnalytics />}
-          {activeTab === 'studio' && <PredictionStudio />}
-          {activeTab === 'history' && <ForecastHistory />}
-          {activeTab === 'models' && <ModelLab />}
-          {activeTab === 'system' && <SystemStatusView />}
+        <main className="main-viewport" role="main" style={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
+          {route.primary === 'factory' && <DataFactoryView />}
+          {route.primary === 'terminal' && <MarketTerminalView />}
+          {route.primary === 'models' && <ModelsHubView />}
+          {route.primary === 'operations' && <SystemOperationsView initialTab={route.operationsTab} />}
         </main>
 
         {/* Institutional Footer */}
         <footer className="app-footer">
           <div>
-            Crypto Data Engineering, Analytics & Forecasting Platform • Binance Reference Language
+            MarketStream — Real-Time Financial Data Intelligence Platform • Industrial Data Factory & Financial Terminal
           </div>
           <div style={{ fontFamily: 'var(--font-mono)' }}>
-            Medallion Architecture (Bronze/Silver/Gold) • Walk-Forward Expanding CV • Strict Integrity SLAs
+            Medallion Lakehouse • TradingView Engine • Zero-Lookahead Walk-Forward ML
           </div>
         </footer>
       </div>
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <MarketStreamProvider>
+      <AppContent />
+    </MarketStreamProvider>
   );
 };
 

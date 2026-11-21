@@ -21,6 +21,26 @@ import {
 import { formatCurrency } from '../utils/formatters';
 import { CandlestickChart } from '../components/CandlestickChart';
 
+const buildSvgPolyline = (values: (number | null | undefined)[], width = 800, height = 180): string => {
+  const valid = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  if (valid.length < 2) return '';
+  const minVal = Math.min(...valid);
+  const maxVal = Math.max(...valid);
+  const range = maxVal - minVal || 1;
+  const padY = 14;
+  const usableH = height - padY * 2;
+  const n = values.length;
+  const pts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const val = values[i];
+    if (typeof val !== 'number' || !Number.isFinite(val)) continue;
+    const x = n > 1 ? (i / (n - 1)) * width : 0;
+    const y = padY + (1 - (val - minVal) / range) * usableH;
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  return pts.join(' ');
+};
+
 export const MarketAnalytics: React.FC = () => {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('BTCUSDT');
@@ -196,12 +216,11 @@ export const MarketAnalytics: React.FC = () => {
               <p>No stored candles available for {selectedSymbol} ({timeframe}).</p>
             </div>
           ) : (
-            <div style={{ height: '440px', width: '100%' }}>
-              <CandlestickChart
-                candles={marketData.candles}
-                indicators={marketData.indicators}
-              />
-            </div>
+            <CandlestickChart
+              candles={marketData.candles}
+              indicators={marketData.indicators}
+              height={420}
+            />
           )}
         </div>
       )}
@@ -253,21 +272,37 @@ export const MarketAnalytics: React.FC = () => {
                 </div>
               </div>
 
-              {/* Value at Risk (VaR) Cards */}
-              <div className="grid-2-cols" style={{ marginTop: '1rem' }}>
+              {/* Value at Risk (VaR), CVaR, ATR, VWAP Cards */}
+              <div className="grid-4-cols" style={{ marginTop: '1rem' }}>
                 <div className="kpi-card">
-                  <div className="kpi-label">Value-at-Risk 95% (1-bar horizon)</div>
-                  <div className="kpi-value" style={{ color: 'var(--semantic-red)' }}>
-                    {returnsData.metrics?.var_95_pct}%
+                  <div className="kpi-label">VaR 95% / CVaR 95%</div>
+                  <div className="kpi-value" style={{ color: 'var(--semantic-red)', fontSize: '1.2rem' }}>
+                    {returnsData.metrics?.var_95_pct}% / {returnsData.metrics?.cvar_95_pct ?? '—'}%
                   </div>
-                  <div className="kpi-subtext">5% probability of single-interval loss exceeding this bound</div>
+                  <div className="kpi-subtext">5% tail & Expected Shortfall (ES)</div>
                 </div>
                 <div className="kpi-card">
-                  <div className="kpi-label">Value-at-Risk 99% (1-bar horizon)</div>
-                  <div className="kpi-value" style={{ color: 'var(--semantic-red)' }}>
-                    {returnsData.metrics?.var_99_pct}%
+                  <div className="kpi-label">VaR 99% / CVaR 99%</div>
+                  <div className="kpi-value" style={{ color: 'var(--semantic-red)', fontSize: '1.2rem' }}>
+                    {returnsData.metrics?.var_99_pct}% / {returnsData.metrics?.cvar_99_pct ?? '—'}%
                   </div>
-                  <div className="kpi-subtext">1% tail risk threshold</div>
+                  <div className="kpi-subtext">1% extreme tail & CVaR</div>
+                </div>
+                <div className="kpi-card">
+                  <div className="kpi-label">ATR (14) & Log Mean</div>
+                  <div className="kpi-value" style={{ fontSize: '1.2rem' }}>
+                    {returnsData.metrics?.atr_14 != null ? formatCurrency(returnsData.metrics.atr_14) : '—'}
+                  </div>
+                  <div className="kpi-subtext">
+                    Log Mean: {returnsData.metrics?.log_mean_pct != null ? `${returnsData.metrics.log_mean_pct.toFixed(4)}%` : '—'}
+                  </div>
+                </div>
+                <div className="kpi-card">
+                  <div className="kpi-label">Session VWAP</div>
+                  <div className="kpi-value" style={{ fontSize: '1.2rem', color: 'var(--accent-cyan)' }}>
+                    {returnsData.metrics?.vwap != null ? formatCurrency(returnsData.metrics.vwap) : '—'}
+                  </div>
+                  <div className="kpi-subtext">Volume-Weighted Average Price</div>
                 </div>
               </div>
 
@@ -338,9 +373,38 @@ export const MarketAnalytics: React.FC = () => {
                 <div className="panel-header">
                   <div className="panel-title">
                     <Activity size={18} color="var(--accent-cyan)" />
-                    <span>Recent Rolling Volatility Series</span>
+                    <span>Annualized Volatility Trajectory &amp; Recent Series</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                    <span style={{ color: '#06b6d4' }}>— 7p</span>
+                    <span style={{ color: '#FCD535' }}>— 14p</span>
+                    <span style={{ color: '#A855F7' }}>— 30p</span>
                   </div>
                 </div>
+                {volatilityData.series.length >= 2 && (
+                  <div className="chart-svg-box" style={{ marginBottom: '1rem' }}>
+                    <svg viewBox="0 0 800 180" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
+                      <polyline
+                        fill="none"
+                        stroke="#06b6d4"
+                        strokeWidth="2"
+                        points={buildSvgPolyline(volatilityData.series.slice(-120).map((s) => s.vol_7))}
+                      />
+                      <polyline
+                        fill="none"
+                        stroke="#FCD535"
+                        strokeWidth="1.75"
+                        points={buildSvgPolyline(volatilityData.series.slice(-120).map((s) => s.vol_14))}
+                      />
+                      <polyline
+                        fill="none"
+                        stroke="#A855F7"
+                        strokeWidth="1.5"
+                        points={buildSvgPolyline(volatilityData.series.slice(-120).map((s) => s.vol_30))}
+                      />
+                    </svg>
+                  </div>
+                )}
                 <div className="table-responsive">
                   <table className="data-table">
                     <thead>
@@ -415,9 +479,21 @@ export const MarketAnalytics: React.FC = () => {
                 <div className="panel-header">
                   <div className="panel-title">
                     <TrendingUp size={18} color="var(--accent-cyan)" />
-                    <span>Historical Drawdown Observations</span>
+                    <span>Drawdown Underwater Trajectory &amp; Recent Observations</span>
                   </div>
                 </div>
+                {drawdownsData.series.length >= 2 && (
+                  <div className="chart-svg-box" style={{ marginBottom: '1rem' }}>
+                    <svg viewBox="0 0 800 180" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
+                      <polyline
+                        fill="none"
+                        stroke="#F6465D"
+                        strokeWidth="2"
+                        points={buildSvgPolyline(drawdownsData.series.slice(-150).map((s) => s.drawdown_pct))}
+                      />
+                    </svg>
+                  </div>
+                )}
                 <div className="table-responsive">
                   <table className="data-table">
                     <thead>
@@ -479,48 +555,82 @@ export const MarketAnalytics: React.FC = () => {
               <p>{correlationData?.message || 'Need more historical observations to compute asset correlations.'}</p>
             </div>
           ) : (
-            <div className="table-responsive" style={{ marginTop: '0.5rem' }}>
-              <table className="data-table correlation-matrix-table">
-                <thead>
-                  <tr>
-                    <th>Asset</th>
-                    {correlationData.symbols.map((sym) => (
-                      <th key={sym} style={{ textAlign: 'center' }}>
-                        {sym}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {correlationData.matrix.map((row) => (
-                    <tr key={row.symbol}>
-                      <td style={{ fontWeight: 600, color: '#fff' }}>{row.symbol}</td>
-                      {correlationData.symbols.map((colSym) => {
-                        const val = row[colSym];
-                        let bgColor = 'transparent';
-                        if (val != null) {
-                          if (val > 0.7) bgColor = 'rgba(0, 230, 204, 0.25)';
-                          else if (val > 0.4) bgColor = 'rgba(0, 230, 204, 0.12)';
-                          else if (val < 0) bgColor = 'rgba(255, 77, 77, 0.2)';
-                        }
-                        return (
-                          <td
-                            key={colSym}
-                            style={{
-                              textAlign: 'center',
-                              fontFamily: 'var(--font-mono)',
-                              backgroundColor: bgColor,
-                              fontWeight: row.symbol === colSym ? 700 : 400
-                            }}
-                          >
-                            {val != null ? val.toFixed(3) : '—'}
-                          </td>
-                        );
-                      })}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '0.5rem' }}>
+              <div className="table-responsive">
+                <table className="data-table correlation-matrix-table">
+                  <thead>
+                    <tr>
+                      <th>Pearson Correlation (ρ)</th>
+                      {correlationData.symbols.map((sym) => (
+                        <th key={sym} style={{ textAlign: 'center' }}>
+                          {sym}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {correlationData.matrix.map((row) => (
+                      <tr key={row.symbol}>
+                        <td style={{ fontWeight: 600, color: '#fff' }}>{row.symbol}</td>
+                        {correlationData.symbols.map((colSym) => {
+                          const val = row[colSym];
+                          let bgColor = 'transparent';
+                          if (val != null) {
+                            if (val > 0.7) bgColor = 'rgba(0, 230, 204, 0.25)';
+                            else if (val > 0.4) bgColor = 'rgba(0, 230, 204, 0.12)';
+                            else if (val < 0) bgColor = 'rgba(255, 77, 77, 0.2)';
+                          }
+                          return (
+                            <td
+                              key={colSym}
+                              style={{
+                                textAlign: 'center',
+                                fontFamily: 'var(--font-mono)',
+                                backgroundColor: bgColor,
+                                fontWeight: row.symbol === colSym ? 700 : 400
+                              }}
+                            >
+                              {val != null ? val.toFixed(3) : '—'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {correlationData.covariance_matrix && correlationData.covariance_matrix.length > 0 && (
+                <div className="table-responsive">
+                  <table className="data-table correlation-matrix-table">
+                    <thead>
+                      <tr>
+                        <th>Return Covariance (pct²)</th>
+                        {correlationData.symbols.map((sym) => (
+                          <th key={sym} style={{ textAlign: 'center' }}>
+                            {sym}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {correlationData.covariance_matrix.map((row) => (
+                        <tr key={row.symbol}>
+                          <td style={{ fontWeight: 600, color: '#fff' }}>{row.symbol}</td>
+                          {correlationData.symbols.map((colSym) => {
+                            const val = row[colSym];
+                            return (
+                              <td key={colSym} style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
+                                {val != null ? Number(val).toFixed(4) : '—'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>

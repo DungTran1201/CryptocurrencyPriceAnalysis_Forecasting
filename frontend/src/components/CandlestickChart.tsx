@@ -5,6 +5,7 @@ import { formatNumber, formatVolume } from '../utils/formatters';
 interface ChartProps {
   candles: KlineCandle[];
   indicators: Record<string, (number | null)[]>;
+  height?: number;
   visibleIndicators?: {
     sma?: boolean;
     ema?: boolean;
@@ -16,24 +17,26 @@ interface ChartProps {
 export const CandlestickChart: React.FC<ChartProps> = ({
   candles,
   indicators,
+  height = 420,
   visibleIndicators = { sma: true, ema: false, boll: true, rsi: true }
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height: 480 });
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height });
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
-  // ResizeObserver for dynamic responsiveness
+  // ResizeObserver for dynamic responsiveness (guards integer bounds to prevent DPI resize feedback loop)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        if (width > 0 && height > 0) {
-          setDimensions({ width, height });
+        const w = Math.round(entry.contentRect.width);
+        const h = Math.round(entry.contentRect.height);
+        if (w > 0 && h > 0) {
+          setDimensions((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
         }
       }
     });
@@ -50,31 +53,31 @@ export const CandlestickChart: React.FC<ChartProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // High DPI scaling
+    // High DPI scaling decoupled from DOM layout size
     const dpr = window.devicePixelRatio || 1;
     const rect = container.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    const width = Math.max(10, Math.round(rect.width));
+    const chartHeight = Math.max(240, Math.round(rect.height || height));
 
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
+    canvas.width = Math.max(1, Math.round(width * dpr));
+    canvas.height = Math.max(1, Math.round(chartHeight * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Layout division:
     // Main price chart: 62% of height
     // Volume: 16% of height
     // RSI: 22% of height
-    const priceH = height * 0.62;
-    const volH = height * 0.16;
+    const priceH = chartHeight * 0.62;
+    const volH = chartHeight * 0.16;
 
     const priceTop = 15;
     const priceBottom = priceH - 10;
     const volTop = priceH + 12;
     const volBottom = priceH + volH - 6;
     const rsiTop = priceH + volH + 12;
-    const rsiBottom = height - 20;
+    const rsiBottom = chartHeight - 20;
 
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, width, chartHeight);
 
     // Compute Price min and max
     let minPrice = Infinity;
@@ -299,7 +302,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       const c = candles[i];
       const x = i * candleW + barW / 2;
       const timeLabel = c.open_time.slice(11, 16) || c.open_time.slice(5, 10);
-      ctx.fillText(timeLabel, x, height - 4);
+      ctx.fillText(timeLabel, x, chartHeight - 4);
     }
 
     // 7. Crosshairs on Hover
@@ -313,7 +316,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       // Vertical line across chart
       ctx.beginPath();
       ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
+      ctx.lineTo(x, chartHeight);
       ctx.stroke();
 
       // Horizontal price line
@@ -334,7 +337,7 @@ export const CandlestickChart: React.FC<ChartProps> = ({
       }
       ctx.setLineDash([]);
     }
-  }, [candles, indicators, visibleIndicators, hoverIdx, mousePos, dimensions]);
+  }, [candles, indicators, visibleIndicators, hoverIdx, mousePos, dimensions, height]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const container = containerRef.current;
@@ -390,14 +393,18 @@ export const CandlestickChart: React.FC<ChartProps> = ({
         </div>
       )}
 
-      {/* Canvas Container */}
+      {/* Canvas Container (locked pixel height + absolute canvas eliminates HiDPI ResizeObserver stretch loops) */}
       <div
         ref={containerRef}
         className="chart-container"
+        style={{ height: `${height}px`, minHeight: `${height}px`, maxHeight: `${height}px`, position: 'relative', width: '100%', overflow: 'hidden' }}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
       >
-        <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }} />
+        <canvas
+          ref={canvasRef}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
+        />
       </div>
     </div>
   );

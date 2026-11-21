@@ -7,6 +7,7 @@ from sqlalchemy import select, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
+from backend.app.core.security import require_admin_if_configured
 from backend.app.models.data_quality import DataQualityRun, DataQualityResult
 from backend.app.services.data_quality_service import DataQualityService
 
@@ -26,9 +27,12 @@ async def get_data_quality_overview(db: AsyncSession = Depends(get_db)) -> Dict[
 
 
 @router.get("/lineage", summary="Retrieve Medallion data lineage DAG")
-async def get_lineage(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
-    """Returns nodes and edges connecting Bronze, Silver, Gold, Features, and Serving."""
-    return await DataQualityService.get_lineage_graph(db)
+async def get_lineage(
+    dataset: Optional[str] = Query(None, description="Optional dataset_id filter"),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Return nodes, contract edges, and persisted execution lineage runs."""
+    return await DataQualityService.get_lineage_graph(db, dataset_filter=dataset)
 
 
 @router.get("/runs", summary="Query historical data quality evaluation runs")
@@ -119,7 +123,8 @@ async def get_run_details(run_id: str, db: AsyncSession = Depends(get_db)) -> Di
 @router.post("/evaluate", summary="Execute data quality audit on demand")
 async def trigger_evaluation(
     req: RunEvaluationRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_admin_if_configured),
 ) -> Dict[str, Any]:
     """Runs the 10 data quality rules on the selected symbol/interval immediately."""
     run = await DataQualityService.evaluate_klines(
